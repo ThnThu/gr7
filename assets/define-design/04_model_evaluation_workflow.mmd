@@ -1,0 +1,43 @@
+%%{init: {"htmlLabels": false}}%%
+flowchart LR
+    subgraph DET["Đánh giá Detection"]
+        direction LR
+        D1["Test images +<br/>ground-truth boxes"]:::gray --> D2["YOLOv8s (chính)"]:::blue
+        D1 --> DB["Baseline<br/>B-D1 YOLOv8n · B-D2 Faster R-CNN"]:::note
+        D2 --> D3["Cùng bộ đánh giá mAP"]:::blue
+        DB --> D3
+        D3 --> D4["Precision · Recall<br/>mAP@0.5 · mAP@0.5:0.95"]:::blue
+    end
+
+    subgraph SEG["Đánh giá Segmentation"]
+        direction LR
+        S1["Test images +<br/>ground-truth masks"]:::gray --> S2["U-Net (chính)"]:::teal
+        S1 --> SB["Baseline<br/>B-S1 Otsu · B-S2 U-Net pretrained"]:::note
+        S2 --> S3["Mask Comparison"]:::teal
+        SB --> S3
+        S3 --> S4["IoU · Dice · mIoU<br/>IoU/Dice nhị phân"]:::teal
+    end
+
+    subgraph APP["Đánh giá tầng ứng dụng"]
+        direction LR
+        A1["20–30 ảnh demo<br/>5–10 câu hỏi mẫu"]:::gray --> A2["LLM/prompt<br/>Captioning / VQA"]:::purple
+        A2 --> A3["Đối chiếu JSON<br/>hallucination · độ trễ"]:::purple
+    end
+
+    D4 --> R["Evaluation Report<br/>bảng so với baseline"]:::navy
+    S4 --> R
+    A3 --> R
+    R --> E["Error Analysis"]:::gray
+    E --> P["Performance Summary"]:::green
+    R -.-> N["Không so trực tiếp<br/>mAP với IoU"]:::note
+
+    classDef navy fill:#0f2a44,stroke:#0f2a44,color:#ffffff,stroke-width:1px
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1px
+    classDef teal fill:#ccfbf1,stroke:#0f766e,color:#134e4a,stroke-width:1px
+    classDef gray fill:#f1f5f9,stroke:#94a3b8,color:#334155,stroke-width:1px
+    classDef green fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1px
+    classDef note fill:#ffffff,stroke:#94a3b8,color:#475569,stroke-width:1px,stroke-dasharray:4 3
+    classDef purple fill:#f3e8ff,stroke:#7e22ce,color:#581c87,stroke-width:1px
+    style DET fill:#f8fafc,stroke:#bfdbfe,stroke-width:1px
+    style SEG fill:#f8fafc,stroke:#99f6e4,stroke-width:1px
+    style APP fill:#fdf4ff,stroke:#e9d5ff,stroke-width:1px

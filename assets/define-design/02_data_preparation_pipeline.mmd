@@ -1,0 +1,26 @@
+%%{init: {"htmlLabels": false}}%%
+flowchart LR
+    subgraph DET["Nhánh Detection — NEU-DET"]
+        direction LR
+        D1["NEU-DET"]:::gray --> D2["Image<br/>inspection"]:::gray
+        D2 --> D3["XML annotation<br/>parsing"]:::gray
+        D3 --> D4["Bounding box<br/>processing"]:::blue
+        D4 --> D5["Dataset<br/>splitting"]:::gray
+        D5 --> D6["YOLO format<br/>conversion"]:::blue
+        D6 --> D7["Detection<br/>training data"]:::green
+    end
+
+    subgraph SEG["Nhánh Segmentation — NEU-Seg"]
+        direction LR
+        S1["NEU-Seg"]:::gray --> S2["Image / mask<br/>inspection"]:::gray
+        S2 --> S3["Mask class<br/>verification"]:::gray
+        S3 --> S4["Preprocessing"]:::gray
+        S4 --> S5["Dataset<br/>splitting"]:::gray
+        S5 --> S6["Segmentation<br/>training data"]:::green
+    end
+
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1px
+    classDef gray fill:#f1f5f9,stroke:#94a3b8,color:#334155,stroke-width:1px
+    classDef green fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1px
+    style DET fill:#f8fafc,stroke:#bfdbfe,stroke-width:1px
+    style SEG fill:#f8fafc,stroke:#99f6e4,stroke-width:1px

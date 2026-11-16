@@ -1,0 +1,86 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+**/.venv/
+**/venv/
+**/ENV/
+**/env/
+
+# Packaging / build artifacts
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+
+# Test / coverage caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# IDE / editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+*.bak
+tmp/
+
+# NEU-DET dataset (large raw data). Keep essential annotations (.xml) and helper scripts.
+# Images and other dataset binaries are ignored; XML annotations and check_neudet.py are re-included.
+NEU-DET/**
+!NEU-DET/**/
+!NEU-DET/**/*.xml
+!NEU-DET/**/check_neudet.py
+# Re-ignore nested virtual environments inside NEU-DET if present
+NEU-DET/**/.venv/
+NEU-DET/**/venv/
+
+# Model weights / checkpoints
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.engine
+*.tflite
+*.h5
+*.pkl
+
+# Training outputs (runs, predictions, exports). Keep configs/metrics source files if added explicitly.
+runs/
+**/runs/
+wandb/
+mlruns/
+tensorboard/
+
+# Generated/processed data and experiment artifacts (preserve YOLO reproducibility via configs/specs/code)
+yolov8-detection/data/
+Results/
+
+# Environment / secrets (if any)
+.env
+.env.*
+*.local

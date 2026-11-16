@@ -1,0 +1,18 @@
+%%{init: {"htmlLabels": false}}%%
+flowchart LR
+    U["Người dùng"]:::gray --> A["Tải ảnh<br/>sản phẩm"]:::gray
+    A --> B["Hệ thống AI<br/>phân tích ảnh"]:::navy
+    B --> D["YOLOv8s<br/>Phát hiện và định vị lỗi"]:::blue
+    B --> S["U-Net<br/>Phân vùng khu vực lỗi"]:::teal
+    D --> RD["Kết quả Detection<br/>box · lớp · confidence"]:::blue
+    S --> RS["Kết quả Segmentation<br/>mask · diện tích"]:::teal
+    RD --> T["Sinh mô tả & hỏi đáp<br/>Captioning/VQA"]:::purple
+    RS --> T
+    T --> R["Hiển thị kết quả<br/>Hình ảnh + Ngôn ngữ"]:::green
+
+    classDef navy fill:#0f2a44,stroke:#0f2a44,color:#ffffff,stroke-width:1px
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1px
+    classDef teal fill:#ccfbf1,stroke:#0f766e,color:#134e4a,stroke-width:1px
+    classDef gray fill:#f1f5f9,stroke:#94a3b8,color:#334155,stroke-width:1px
+    classDef green fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1px
+    classDef purple fill:#f3e8ff,stroke:#7e22ce,color:#581c87,stroke-width:1px

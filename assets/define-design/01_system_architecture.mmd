@@ -1,0 +1,40 @@
+%%{init: {"htmlLabels": false}}%%
+flowchart LR
+    U["Người dùng"]:::gray --> W["Web Application"]:::navy
+    W --> V["Image Upload<br/>& Validation"]:::gray
+    V --> P["Preprocessing"]:::gray
+
+    subgraph DET["Nhánh Detection — YOLOv8s"]
+        direction LR
+        YW["YOLOv8s<br/>NEU-DET weights"]:::blue
+        YI["YOLOv8s<br/>inference"]:::blue
+        YO["Bounding boxes<br/>Defect classes<br/>Confidence scores"]:::blue
+        YW -.-> YI
+        YI --> YO
+    end
+
+    subgraph SEG["Nhánh Segmentation — U-Net"]
+        direction LR
+        SW["U-Net<br/>NEU-Seg weights"]:::teal
+        SI["U-Net<br/>inference"]:::teal
+        SO["Segmentation mask<br/>Pixel-level regions"]:::teal
+        SW -.-> SI
+        SI --> SO
+    end
+
+    P --> YI
+    P --> SI
+    YO --> RC["Result Collection"]:::navy
+    SO --> RC
+    RC --> TG["Text Generation Layer<br/>Captioning / VQA"]:::purple
+    TG --> RV["Result Visualization"]:::green
+    RV --> OUT["Display Both Results<br/>Images + Text"]:::green
+
+    classDef navy fill:#0f2a44,stroke:#0f2a44,color:#ffffff,stroke-width:1px
+    classDef blue fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1px
+    classDef teal fill:#ccfbf1,stroke:#0f766e,color:#134e4a,stroke-width:1px
+    classDef gray fill:#f1f5f9,stroke:#94a3b8,color:#334155,stroke-width:1px
+    classDef green fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1px
+    classDef purple fill:#f3e8ff,stroke:#7e22ce,color:#581c87,stroke-width:1px
+    style DET fill:#f8fafc,stroke:#bfdbfe,stroke-width:1px
+    style SEG fill:#f8fafc,stroke:#99f6e4,stroke-width:1px
