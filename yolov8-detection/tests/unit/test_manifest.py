@@ -1,4 +1,4 @@
-"""Unit tests for the shared atomic JSON writer, config and report (T009/T018)."""
+"""Unit tests for the shared atomic JSON writer, config and reports (T009/T018/T026)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -16,8 +17,12 @@ from detection.data.manifest import build_config, write_json
 from detection.data.models import (
     ANOMALY_CODES,
     ANOMALY_SCOPES,
+    SPLIT_NAMES,
     AnomalyRecord,
+    DuplicateGroup,
     SourceFingerprint,
+    Split,
+    SplitAssignment,
 )
 
 
@@ -502,3 +507,237 @@ def test_write_validation_report_defaults_generated_at_to_utc_iso8601(tmp_path: 
 
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", report["generated_at"])
     datetime.strptime(report["generated_at"], "%Y-%m-%dT%H:%M:%SZ")
+
+
+# --- T026: split_manifest.json schema and writer ---------------------------
+
+
+def _split_manifest_entry_points() -> tuple[Any, Any]:
+    builder = getattr(manifest_module, "build_split_manifest", None)
+    writer = getattr(manifest_module, "write_split_manifest", None)
+    if not callable(builder) or not callable(writer):
+        pytest.fail(
+            "US3 split manifest helpers are not implemented yet: "
+            "build_split_manifest / write_split_manifest"
+        )
+    return builder, writer
+
+
+def _assignment(index: int, split: str, *, digest: str | None = None) -> SplitAssignment:
+    stem = f"s{index:03d}"
+    return SplitAssignment(
+        sample_id=f"train/{stem}",
+        split=split,
+        source_subset="train",
+        source_image=f"train/images/{stem}.jpg",
+        source_xml=f"train/annotations/{stem}.xml",
+        output_image=f"images/{split}/{stem}.jpg",
+        output_label=f"labels/{split}/{stem}.txt",
+        sha256=digest or f"sha256:{index:064x}",
+        present_classes=[0],
+        object_count=1,
+    )
+
+
+def _split_manifest_kwargs(**overrides: Any) -> dict[str, Any]:
+    counts = {"train": 15, "validation": 3, "test": 2}
+    ratios = {"train": 0.75, "validation": 0.15, "test": 0.10}
+    digest = "sha256:" + "ab" * 32
+    splits: dict[str, Split] = {}
+    start = 0
+    for name in SPLIT_NAMES:
+        assignments = [
+            _assignment(index, name, digest=digest if index < 2 and name == "train" else None)
+            for index in range(start, start + counts[name])
+        ]
+        start += counts[name]
+        splits[name] = Split(
+            name=name,
+            target_ratio=ratios[name],
+            images=counts[name],
+            objects=counts[name],
+            image_counts_by_class={0: counts[name]},
+            object_counts_by_class={0: counts[name]},
+            source_subset_counts={"train": counts[name]},
+            assignments=assignments,
+        )
+    group = DuplicateGroup(
+        sha256=digest,
+        members=[assignment.sample_id for assignment in splits["train"].assignments[:2]],
+        labels_consistent=True,
+        assigned_split="train",
+    )
+    result = SimpleNamespace(
+        splits=splits,
+        anomalies=[],
+        duplicate_groups=[group],
+        invariants={
+            "pairwise_disjoint_sample_id": True,
+            "pairwise_disjoint_output_path": True,
+            "pairwise_disjoint_sha256": True,
+            "all_eligible_assigned": True,
+            "duplicate_groups_atomic": True,
+            "no_cross_subset_pairing": True,
+            "source_unchanged": True,
+            "class_mapping_fixed": True,
+        },
+    )
+    kwargs: dict[str, Any] = {
+        "dataset_name": "NEU-DET",
+        "source_root": "/mnt/datasets/NEU-DET",
+        "source_subsets": ["train", "validation"],
+        "fingerprint": _fingerprint(),
+        "seed": 42,
+        "ratios": ratios,
+        "on_anomaly": "fail",
+        "split_result": result,
+        "generated_at": "2026-11-19T00:00:00Z",
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def test_build_split_manifest_has_all_required_schema_fields_and_classes() -> None:
+    builder, _ = _split_manifest_entry_points()
+
+    manifest = builder(**_split_manifest_kwargs())
+
+    assert set(manifest) == {
+        "schema_version",
+        "generated_at",
+        "dataset",
+        "config",
+        "classes",
+        "totals",
+        "splits",
+        "duplicate_groups",
+        "invariants",
+    }
+    assert manifest["schema_version"] == "1.0"
+    assert manifest["generated_at"] == "2026-11-19T00:00:00Z"
+    assert set(manifest["dataset"]) == {
+        "name",
+        "source_root",
+        "source_fingerprint",
+        "source_subsets",
+    }
+    assert manifest["dataset"]["source_subsets"] == ["train", "validation"]
+    assert manifest["config"] == build_config(
+        seed=42,
+        ratios={"train": 0.75, "validation": 0.15, "test": 0.10},
+        on_anomaly="fail",
+    )
+    assert manifest["classes"] == [
+        {"id": class_id, "name": CLASS_NAMES[class_id]} for class_id in range(6)
+    ]
+    assert set(manifest["splits"]) == set(SPLIT_NAMES)
+    assert isinstance(manifest["duplicate_groups"], list)
+
+
+def test_build_split_manifest_totals_and_per_split_counts() -> None:
+    builder, _ = _split_manifest_entry_points()
+    kwargs = _split_manifest_kwargs()
+
+    manifest = builder(**kwargs)
+    result = kwargs["split_result"]
+
+    assert manifest["totals"]["images"] == 20
+    assert manifest["totals"]["objects"] == 20
+    assert manifest["totals"]["image_counts_by_class"] == {"0": 20}
+    assert manifest["totals"]["object_counts_by_class"] == {"0": 20}
+    assert sum(manifest["splits"][name]["images"] for name in SPLIT_NAMES) == 20
+    for name in SPLIT_NAMES:
+        expected = result.splits[name].images
+        split = manifest["splits"][name]
+        assert split["images"] == expected
+        assert split["objects"] == expected
+        assert split["source_subset_counts"] == {"train": expected}
+        assert len(split["assignments"]) == expected
+
+
+def test_build_split_manifest_actual_ratio_is_images_over_totals() -> None:
+    builder, _ = _split_manifest_entry_points()
+
+    manifest = builder(**_split_manifest_kwargs())
+
+    for name in SPLIT_NAMES:
+        split = manifest["splits"][name]
+        assert split["target_ratio"] == pytest.approx(
+            manifest["config"]["ratios"][name]
+        )
+        assert split["actual_ratio"] == pytest.approx(split["images"] / 20)
+    assert sum(
+        manifest["splits"][name]["actual_ratio"] for name in SPLIT_NAMES
+    ) == pytest.approx(1.0)
+
+
+def test_build_split_manifest_assignments_are_sorted_by_sample_id() -> None:
+    builder, _ = _split_manifest_entry_points()
+    kwargs = _split_manifest_kwargs()
+    assignments = kwargs["split_result"].splits["train"].assignments
+    assignments.reverse()
+
+    manifest = builder(**kwargs)
+
+    for name in SPLIT_NAMES:
+        ids = [
+            assignment["sample_id"]
+            for assignment in manifest["splits"][name]["assignments"]
+        ]
+        assert ids == sorted(ids)
+
+
+def test_build_split_manifest_records_duplicate_groups() -> None:
+    builder, _ = _split_manifest_entry_points()
+
+    manifest = builder(**_split_manifest_kwargs())
+
+    assert len(manifest["duplicate_groups"]) == 1
+    group = manifest["duplicate_groups"][0]
+    assert group["group_id"] == "sha256:" + "ab" * 32
+    assert group["sha256"] == "sha256:" + "ab" * 32
+    assert group["assigned_split"] == "train"
+    assert group["members"] == ["train/s000", "train/s001"]
+
+
+def test_build_split_manifest_has_all_eight_invariants() -> None:
+    builder, _ = _split_manifest_entry_points()
+
+    manifest = builder(**_split_manifest_kwargs())
+
+    assert set(manifest["invariants"]) == {
+        "pairwise_disjoint_sample_id",
+        "pairwise_disjoint_output_path",
+        "pairwise_disjoint_sha256",
+        "all_eligible_assigned",
+        "duplicate_groups_atomic",
+        "no_cross_subset_pairing",
+        "source_unchanged",
+        "class_mapping_fixed",
+    }
+    assert all(manifest["invariants"].values())
+
+
+def test_write_split_manifest_is_atomic_and_refuses_invariant_failure(
+    tmp_path: Path,
+) -> None:
+    _, writer = _split_manifest_entry_points()
+    target = tmp_path / "split_manifest.json"
+    kwargs = _split_manifest_kwargs()
+
+    written = writer(target, **kwargs)
+    assert target.is_file()
+    assert json.loads(target.read_text(encoding="utf-8")) == written
+
+    original = target.read_bytes()
+    broken = _split_manifest_kwargs()
+    broken["split_result"].invariants["pairwise_disjoint_sha256"] = False
+    with pytest.raises(ValueError, match="invariant"):
+        writer(target, **broken)
+    assert target.read_bytes() == original
+    assert list(tmp_path.iterdir()) == [target]
+
+    missing_target = tmp_path / "nested" / "split_manifest.json"
+    with pytest.raises(ValueError, match="invariant"):
+        writer(missing_target, **broken)
+    assert not missing_target.exists()

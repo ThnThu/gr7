@@ -1,4 +1,4 @@
-"""Integration tests for the US1 conversion (T012/T016) and US2 report (T019).
+"""Integration tests for US1 (T012/T016), US2 (T019) and US3 (T027).
 
 All sources are synthetic trees under ``tmp_path`` built by
 ``tests/conftest.py``. The real NEU-DET dataset is never read or written.
@@ -7,6 +7,7 @@ All sources are synthetic trees under ``tmp_path`` built by
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import Any
 import pytest
 
 from detection.cli import main
+from detection.data.classes import CLASS_NAMES
 
 
 def _tree_hashes(root: Path) -> dict[str, str]:
@@ -617,3 +619,195 @@ def test_us2_overwrite_with_failing_input_preserves_previous_dataset(
     assert (output / "images" / "train" / "good.jpg").is_file()
     assert _tree_hashes(valid_source) == before_valid
     assert _tree_hashes(failing_source) == before_failing
+
+
+# --- T027: US3 end-to-end split journey ------------------------------------
+
+
+def _build_us3_source(build_source_tree, tmp_path: Path) -> Path:
+    """Twenty valid samples spread over two source subsets."""
+
+    def specs(
+        prefix: str, count: int, class_offset: int, color_offset: int
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "stem": f"{prefix}{index:02d}",
+                "objects": [
+                    {
+                        "name": CLASS_NAMES[(class_offset + index) % len(CLASS_NAMES)],
+                        "bbox": (20.0, 20.0, 80.0, 80.0),
+                    }
+                ],
+                "color": (
+                    color_offset + index,
+                    color_offset + 10 + index,
+                    color_offset + 20 + index,
+                ),
+            }
+            for index in range(count)
+        ]
+
+    return build_source_tree(
+        tmp_path / "source",
+        {
+            "train": specs("t", 15, 0, 10),
+            "validation": specs("v", 5, 3, 60),
+        },
+    )
+
+
+def _read_manifest(output: Path) -> dict[str, Any]:
+    manifest_path = output / "split_manifest.json"
+    assert manifest_path.is_file(), f"missing {manifest_path} (US3 not implemented yet)"
+    payload: dict[str, Any] = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return payload
+
+
+def _split_ids(manifest: dict[str, Any], split: str) -> list[str]:
+    return [
+        str(assignment["sample_id"])
+        for assignment in manifest["splits"][split]["assignments"]
+    ]
+
+
+def _require_splitter() -> Any:
+    try:
+        module = importlib.import_module("detection.data.splitter")
+    except ModuleNotFoundError as exc:
+        pytest.fail(f"US3 splitter is not implemented yet: {exc}")
+    entry = getattr(module, "split_samples", None)
+    if not callable(entry):
+        pytest.fail("detection.data.splitter has no split_samples entry point yet")
+    return entry
+
+
+def test_us3_two_runs_with_same_seed_produce_identical_split_lists(
+    build_source_tree, tmp_path: Path
+) -> None:
+    source = _build_us3_source(build_source_tree, tmp_path)
+    before = _tree_hashes(source)
+    first_output = tmp_path / "first"
+    second_output = tmp_path / "second"
+    args = ("--seed", "42", "--ratios", "0.75,0.15,0.10")
+
+    assert _run(source, first_output, *args) == 0
+    assert _run(source, second_output, *args) == 0
+    first = _read_manifest(first_output)
+    second = _read_manifest(second_output)
+
+    first.pop("generated_at", None)
+    second.pop("generated_at", None)
+    assert first == second
+    for split in ("train", "validation", "test"):
+        assert _split_ids(first, split) == _split_ids(second, split)
+    assert _tree_hashes(source) == before
+
+
+def test_us3_manifest_splits_are_disjoint_and_files_match_counts(
+    build_source_tree, tmp_path: Path
+) -> None:
+    source = _build_us3_source(build_source_tree, tmp_path)
+    output = tmp_path / "processed"
+
+    assert _run(source, output) == 0
+    manifest = _read_manifest(output)
+
+    id_sets = {split: set(_split_ids(manifest, split)) for split in ("train", "validation", "test")}
+    assert not (id_sets["train"] & id_sets["validation"])
+    assert not (id_sets["train"] & id_sets["test"])
+    assert not (id_sets["validation"] & id_sets["test"])
+    assert len(id_sets["train"] | id_sets["validation"] | id_sets["test"]) == 20
+    assert sum(len(ids) for ids in id_sets.values()) == 20
+
+    for split in ("train", "validation", "test"):
+        assignments = manifest["splits"][split]["assignments"]
+        assert manifest["splits"][split]["images"] == len(assignments)
+        images = sorted((output / "images" / split).iterdir())
+        labels = sorted((output / "labels" / split).iterdir())
+        assert len(images) == len(assignments)
+        assert len(labels) == len(assignments)
+        assert {path.stem for path in images} == {path.stem for path in labels}
+
+
+def test_us3_invalid_ratios_exit_2_and_leave_no_manifest(
+    build_source_tree, tmp_path: Path
+) -> None:
+    source = _build_us3_source(build_source_tree, tmp_path)
+    good_output = tmp_path / "good"
+    before = _tree_hashes(source)
+
+    assert _run(source, good_output) == 0
+    good_manifest = _read_manifest(good_output)
+
+    invalid = [
+        "0.75,0.15,0",
+        "0.5,0.3",
+        "0.5,0.3,0.3",
+    ]
+    for index, ratios in enumerate(invalid):
+        output = tmp_path / f"bad_{index}"
+        assert _run(source, output, "--ratios", ratios) == 2
+        assert not (output / "split_manifest.json").exists()
+        assert not (output / "images").exists()
+        assert not (output / "labels").exists()
+
+    assert _read_manifest(good_output) == good_manifest
+    assert _tree_hashes(source) == before
+
+
+def test_us3_source_change_after_write_exits_3_without_manifest(
+    build_source_tree, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _build_us3_source(build_source_tree, tmp_path)
+    good_output = tmp_path / "good"
+    assert _run(source, good_output) == 0
+    _read_manifest(good_output)
+
+    from detection.data import pipeline as pipeline_module
+
+    real_fingerprint = pipeline_module.fingerprint_source
+
+    def fingerprint_after_external_change(path: Path):
+        target = source / "train" / "images" / "t00.jpg"
+        target.write_bytes(target.read_bytes() + b"\0")
+        return real_fingerprint(path)
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "fingerprint_source",
+        fingerprint_after_external_change,
+    )
+
+    output = tmp_path / "changed"
+    assert _run(source, output) == 3
+    report = _assert_report_only(output)
+    assert report["source"]["fingerprint"]["status"] == "changed"
+    assert not (output / "split_manifest.json").exists()
+    assert _read_manifest(good_output)
+
+
+def test_us3_split_invariant_failure_exits_3_without_manifest(
+    build_source_tree, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _build_us3_source(build_source_tree, tmp_path)
+    original_split_samples = _require_splitter()
+
+    def broken_split_samples(*args: Any, **kwargs: Any) -> Any:
+        result = original_split_samples(*args, **kwargs)
+        result.invariants["pairwise_disjoint_sha256"] = False
+        return result
+
+    monkeypatch.setattr(
+        importlib.import_module("detection.data.splitter"),
+        "split_samples",
+        broken_split_samples,
+    )
+    pipeline = importlib.import_module("detection.data.pipeline")
+    if hasattr(pipeline, "split_samples"):
+        monkeypatch.setattr(pipeline, "split_samples", broken_split_samples)
+
+    output = tmp_path / "processed"
+    assert _run(source, output) == 3
+    _read_report(output)
+    assert not (output / "split_manifest.json").exists()
