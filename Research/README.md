@@ -1,40 +1,48 @@
-# Phiếu đăng ký đề tài
+# Tài liệu đăng ký đề tài (Research)
 
-Thư mục này chứa phiếu đăng ký đề tài **“Ứng dụng AI phát hiện và phân vùng lỗi bề mặt sản phẩm công nghiệp từ hình ảnh”** theo định hướng hai mô hình độc lập: YOLOv8s cho Object Detection và U-Net cho Semantic Segmentation. Tầng ứng dụng có thêm Captioning/VQA tiếng Việt từ JSON bằng LLM/prompt có sẵn; Model Fusion chỉ nằm ở phần mở rộng không bắt buộc.
+Thư mục này chứa **một (01) phiếu đăng ký đề tài chính thức** cho đề tài:
 
-## Các bản tài liệu
+**“Ứng dụng AI phát hiện và phân vùng lỗi bề mặt sản phẩm công nghiệp bằng AI”** (Nhóm 7)
 
-| Tệp | Mục đích |
+## Nguồn chính thức (authoritative)
+
+| Tệp | Vai trò |
 |---|---|
-| `phieu_dang_ky_de_tai_1_trang.md` | Bản một trang A4, bảng 10 mục chuẩn, mỗi mục 1–3 câu; dùng để nộp theo mẫu đăng ký một trang |
-| `phieu_dang_ky_de_tai_rut_gon.md` | Bản cô đọng 11 mục, giữ đủ dữ liệu, baseline, đánh giá, kế hoạch và danh sách cần xác minh |
-| `*.docx` | Bản Word tương ứng, tạo từ các tệp Markdown bằng `build_docx.py` |
-| `build_docx.py` | Chuyển Markdown sang DOCX, không cần pandoc; tự bỏ qua tệp Markdown không tồn tại |
+| `PHIEU_DANG_KY_DE_TAI.md` | **Nguồn soạn thảo chính thức duy nhất (single source of truth).** Mọi chỉnh sửa nội dung phải thực hiện tại đây. |
+| `PHIEU_DANG_KY_DE_TAI.docx` | **Bản phục vụ nộp/trình bày**, được sinh từ Markdown ở trên. Không chỉnh sửa trực tiếp DOCX như nguồn sự thật. |
 
-Bản một trang dùng Times New Roman 12 pt, lề 1,4 cm và bảng 2 cột (`Mục` | `Nội dung`) để vừa đúng một trang A4.
+> Không được tạo thêm bản “chính thức” khác (bản 1 trang/bản rút gọn song song) trong thư mục `Research/`. Nếu cần trích xuất theo mẫu khác, phải tạo bản dẫn xuất tạm và ghi rõ nguồn gốc từ `PHIEU_DANG_KY_DE_TAI.md`.
 
-## Tạo lại DOCX
+## Phiên bản cũ (lưu trữ)
+
+Các phiên bản đăng ký trước đây được chuyển vào `archive/` để bảo toàn lịch sử và **không được chỉnh sửa, không được nộp**:
+
+- `archive/phieu_dang_ky_de_tai_1_trang.md` / `.docx`
+- `archive/phieu_dang_ky_de_tai_rut_gon.md` / `.docx`
+
+Các tệp trong `archive/` chỉ dùng để tham chiếu/đối chiếu nội dung lịch sử.
+
+## Tạo lại DOCX từ Markdown
+
+Yêu cầu: Python 3 và gói `python-docx`.
 
 ```bash
+# (tùy chọn) tạo môi trường tạm
 python3 -m venv /tmp/opencode/docxenv
 /tmp/opencode/docxenv/bin/pip install python-docx
-/tmp/opencode/docxenv/bin/python Research/build_docx.py
+
+# sinh DOCX chính thức
+cd Research
+/tmp/opencode/docxenv/bin/python build_docx.py
+# hoặc, nếu đã cài python-docx trong môi trường hiện tại:
+# python3 build_docx.py
 ```
 
-## Nguyên tắc nội dung
+Script `build_docx.py` chỉ đọc `PHIEU_DANG_KY_DE_TAI.md` và ghi đè `PHIEU_DANG_KY_DE_TAI.docx` (A4, phân cấp tiêu đề, bảng, đánh số trang ở chân trang khi được hỗ trợ). Script bỏ qua các tệp Markdown không tồn tại và **không** xử lý nội dung trong `archive/`.
 
-- **[Đã khảo sát]** / **[Đã kiểm tra]** chỉ dùng cho thông tin đã kiểm tra trực tiếp trên dữ liệu.
-- **[Dự kiến]** là nội dung nhóm sẽ thực hiện, chưa có kết quả.
-- **[Cần xác minh]** là nội dung chưa đủ căn cứ, không được khẳng định khi nộp.
-- Baseline thống nhất với notebook: **B-D1 YOLOv8n** và **B-S1 phân ngưỡng Otsu**. Zero-shot COCO không phải baseline định lượng.
-- Captioning/VQA chỉ diễn giải JSON, không tạo box/mask mới, không fine-tune LLM/VLM và không phải fusion.
-- Không có kết quả mAP/IoU/Dice nào trong tài liệu; mọi chỉ số là kế hoạch đánh giá.
+## Quy ước nội dung
 
-## Trước khi nộp
-
-1. Xác minh giấy phép NEU-DET và NEU-Seg.
-2. Audit **182 ảnh** single-class trùng NEU-DET có mask khác lớp box và **11 cặp ảnh gần trùng** NEU-Seg.
-3. Chốt cách xử lý lỗi dữ liệu: `crazing_240.xml` nằm sai tập; 900 ảnh trùng giữa hai bộ; 60 ảnh both-test dùng làm demo held-out.
-4. Xác nhận GPU/RAM, thời gian huấn luyện và phần cứng đo thời gian suy luận.
-5. Không dùng checkpoint U-Net chưa rõ nguồn gốc và dữ liệu huấn luyện.
-6. Đồng bộ `define_and_design_v2.ipynb`, phiếu một trang và các sơ đồ trong `assets/define-design/`.
+- Mục đánh dấu **[CẦN XÁC NHẬN]** là thông tin chưa được xác minh/chưa chốt và phải được bổ sung trước khi nộp chính thức.
+- Tài liệu mô tả đề xuất/kế hoạch và các quyết định kỹ thuật đã chốt; **không** khẳng định kết quả thực nghiệm chưa thực hiện và **không** thay thế biên bản phê duyệt của giảng viên/hội đồng.
+- Chính sách chia tập NEU-DET (Feature 001): **Train 75% = 1.350**, **Validation 15% = 270**, **Test 10% = 180** (tổng 1.800), **seed = 42**, phân tầng đa nhãn xác định (deterministic multi-label stratification) và chống rò rỉ nhóm trùng (duplicate-group leakage prevention).
+- Hai nhánh thị giác **độc lập**: YOLOv8s (Object Detection, NEU-DET) và U-Net (Semantic Segmentation, NEU-Seg); không gộp dataset, không so sánh trực tiếp mAP với IoU/Dice, và YOLOv8s không thực hiện segmentation.

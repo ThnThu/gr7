@@ -152,3 +152,4 @@ def verify_image(
         sha256=digest,
         image_format=image_format,
     )
+

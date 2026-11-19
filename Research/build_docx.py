@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Chuyển phiếu đăng ký Markdown sang DOCX (không cần pandoc).
 
+Nguồn chính thức duy nhất: ``PHIEU_DANG_KY_DE_TAI.md`` → ``PHIEU_DANG_KY_DE_TAI.docx``.
+Các phiên bản cũ được lưu trong ``archive/`` và không được script này xử lý.
+
 Chỉ hỗ trợ tập con Markdown đang dùng trong Research/: heading, đoạn văn,
-danh sách, bảng, in đậm, inline code, blockquote và đường kẻ ngang.
+danh sách, bảng, in đậm/nghiêng, inline code, blockquote và đường kẻ ngang.
 """
 
 import re
@@ -104,7 +107,31 @@ def parse_table(lines, doc, size, avail_cm=None):
     doc.add_paragraph().paragraph_format.space_after = Pt(2)
 
 
-def convert(md_path, docx_path, title=None, body_size=11.5, margin_cm=1.9):
+def add_page_number(doc):
+    """Thêm số trang ở footer (căn giữa), hỗ trợ bởi Word/LibreOffice."""
+    for section in doc.sections:
+        footer = section.footer
+        paragraph = footer.paragraphs[0] if footer.paragraphs else footer.add_paragraph()
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+
+        fld_begin = OxmlElement("w:fldChar")
+        fld_begin.set(qn("w:fldCharType"), "begin")
+        instr = OxmlElement("w:instrText")
+        instr.set(qn("xml:space"), "preserve")
+        instr.text = " PAGE "
+        fld_end = OxmlElement("w:fldChar")
+        fld_end.set(qn("w:fldCharType"), "end")
+
+        run = paragraph.add_run()
+        run._r.append(fld_begin)
+        run._r.append(instr)
+        run._r.append(fld_end)
+        set_run_font(run, Pt(10))
+
+
+def convert(md_path, docx_path, title=None, body_size=12, margin_cm=2.0, page_numbers=True):
     body = Pt(body_size)
     lines = md_path.read_text(encoding="utf-8").splitlines()
     doc = Document()
@@ -114,15 +141,18 @@ def convert(md_path, docx_path, title=None, body_size=11.5, margin_cm=1.9):
     section.page_width = Cm(21.0)
     section.top_margin = Cm(margin_cm)
     section.bottom_margin = Cm(margin_cm)
-    section.left_margin = Cm(margin_cm + 0.2)
-    section.right_margin = Cm(margin_cm + 0.2)
+    section.left_margin = Cm(margin_cm)
+    section.right_margin = Cm(margin_cm)
 
     style = doc.styles["Normal"]
     style.font.name = FONT
     style.font.size = body
     style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
-    style.paragraph_format.space_after = Pt(2)
-    style.paragraph_format.line_spacing = 1.0
+    style.paragraph_format.space_after = Pt(4)
+    style.paragraph_format.line_spacing = 1.15
+
+    if page_numbers:
+        add_page_number(doc)
 
     i = 0
     while i < len(lines):
@@ -197,28 +227,15 @@ if __name__ == "__main__":
     base = Path(__file__).resolve().parent
     jobs = [
         (
-            base / "phieu_dang_ky_de_tai.md",
-            base / "phieu_dang_ky_de_tai.docx",
-            "Phiếu đăng ký đề tài - bản đầy đủ",
-            11.5,
-            1.9,
-        ),
-        (
-            base / "phieu_dang_ky_de_tai_rut_gon.md",
-            base / "phieu_dang_ky_de_tai_rut_gon.docx",
-            "Phiếu đăng ký đề tài - bản rút gọn",
-            11,
-            1.9,
-        ),
-        (
-            base / "phieu_dang_ky_de_tai_1_trang.md",
-            base / "phieu_dang_ky_de_tai_1_trang.docx",
-            "Phiếu đăng ký đề tài - bản một trang",
+            base / "PHIEU_DANG_KY_DE_TAI.md",
+            base / "PHIEU_DANG_KY_DE_TAI.docx",
+            "Phiếu đăng ký đề tài nghiên cứu - Nhóm 7",
             12,
-            1.4,
+            2.0,
+            True,
         ),
     ]
-    for md_path, docx_path, title, body_size, margin_cm in jobs:
+    for md_path, docx_path, title, body_size, margin_cm, page_numbers in jobs:
         if not md_path.exists():
             print(f"Bỏ qua (không có tệp): {md_path.name}")
             continue
@@ -228,4 +245,5 @@ if __name__ == "__main__":
             title,
             body_size=body_size,
             margin_cm=margin_cm,
+            page_numbers=page_numbers,
         )
