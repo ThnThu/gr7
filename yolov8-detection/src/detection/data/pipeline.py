@@ -1,19 +1,16 @@
-"""Conversion stage plus US2 gate, quarantine and safe output handling.
+"""Conversion, validation, split, write and safe output handling.
 
-The pipeline runs discover -> pair -> validate -> duplicate audit -> gate in
-memory before touching the output. All artifacts are assembled in a sibling
-``<output>.staging`` directory and only committed after the final report and
-verification succeed; an existing dataset is moved to ``<output>.previous``
-first so a failing run can never destroy it.
+The pipeline runs discover -> pair -> validate -> duplicate audit -> gate ->
+split -> write -> verify in memory before committing the output. All artifacts
+are assembled in a sibling ``<output>.staging`` directory and only committed
+after the final report and split manifest succeed; an existing dataset is moved
+to ``<output>.previous`` first so a failing run can never destroy it.
 
 Sample validation and duplicate auditing are delegated to
-:mod:`detection.data.validator` and the report is produced by
-:mod:`detection.data.manifest`. Source images are copied with
-:func:`shutil.copy2`; labels are UTF-8 text with ``\\n`` endings.
-
-Until User Story 3 supplies real split assignments, every converted sample is
-written to the interim ``train`` split. This module never writes
-``split_manifest.json`` or ``dataset.yaml``.
+:mod:`detection.data.validator`, splitting to :mod:`detection.data.splitter`
+and the JSON artifacts to :mod:`detection.data.manifest`. Source images are
+copied with :func:`shutil.copy2`; labels are UTF-8 text with ``\\n`` endings.
+This module never writes ``dataset.yaml``.
 """
 
 from __future__ import annotations
@@ -33,15 +30,23 @@ from .discovery import (
     fingerprint_source,
     pair_samples,
 )
-from .manifest import write_validation_report
+from .manifest import write_split_manifest, write_validation_report
 from .models import (
+    SPLIT_NAMES,
     AnomalyRecord,
+    DuplicateGroup,
     MatchedSample,
     SampleState,
     Severity,
     SourceFingerprint,
 )
-from .validator import DuplicateAuditResult, ValidationResult, audit_duplicate_groups, validate_samples
+from .splitter import SplitResult, split_samples
+from .validator import (
+    DuplicateAuditResult,
+    ValidationResult,
+    audit_duplicate_groups,
+    validate_samples,
+)
 
 INTERIM_SPLIT = "train"
 OWNED_ARTIFACTS = (
@@ -105,7 +110,7 @@ class PipelineResult:
     """Summary of a completed conversion run."""
 
     output: Path
-    split: str
+    split: str = "train,validation,test"
     samples_written: int = 0
     images_written: int = 0
     labels_written: int = 0
@@ -118,6 +123,7 @@ class PipelineResult:
     quarantined_samples: int = 0
     gate_status: str = "pass"
     report_path: Path | None = None
+    manifest_path: Path | None = None
 
 
 @dataclass
@@ -279,6 +285,50 @@ def _verify_written(image_dir: Path, label_dir: Path, expected: int) -> None:
             "post-write verification failed: image/label stems differ; "
             f"missing labels={missing}, extra labels={extra}"
         )
+
+
+def _verify_split_output(staging: Path, split_result: SplitResult) -> None:
+    """Recheck disjointness and that every assignment has both written files."""
+    seen_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    seen_digests: set[str] = set()
+    for name in SPLIT_NAMES:
+        for assignment in split_result.splits[name].assignments:
+            if assignment.sample_id in seen_ids:
+                raise PipelineIOError(
+                    f"post-write verification failed: duplicate sample {assignment.sample_id}"
+                )
+            if assignment.output_image in seen_paths:
+                raise PipelineIOError(
+                    "post-write verification failed: duplicate output path "
+                    f"{assignment.output_image}"
+                )
+            if assignment.sha256 in seen_digests:
+                raise PipelineIOError(
+                    "post-write verification failed: duplicate image content "
+                    f"{assignment.sha256}"
+                )
+            seen_ids.add(assignment.sample_id)
+            seen_paths.add(assignment.output_image)
+            seen_digests.add(assignment.sha256)
+            for relative in (assignment.output_image, assignment.output_label):
+                if not (staging / relative).is_file():
+                    raise PipelineIOError(
+                        f"post-write verification failed: missing {relative}"
+                    )
+
+    for group in split_result.duplicate_groups:
+        locations = {
+            assignment.split
+            for name in SPLIT_NAMES
+            for assignment in split_result.splits[name].assignments
+            if assignment.sample_id in group.members
+        }
+        if len(locations) > 1:
+            raise PipelineIOError(
+                f"post-write verification failed: duplicate group {group.group_id} "
+                "was split across outputs"
+            )
 
 
 def _discard_dataset(staging: Path) -> None:
@@ -642,34 +692,74 @@ def run_conversion(options: ConversionOptions) -> PipelineResult:
                 discard_dataset=True,
             )
 
-        _assign_output_names(prepared)
-        split = options.interim_split
-        image_dir = staging / "images" / split
-        label_dir = staging / "labels" / split
-        image_dir.mkdir(parents=True, exist_ok=True)
-        label_dir.mkdir(parents=True, exist_ok=True)
-
-        objects_written = 0
-        present_classes: set[int] = set()
+        # Keep only duplicate groups whose members are still in the eligible
+        # pool; conflict groups have already been removed by the gate.
+        eligible_ids = {sample.sample_id for sample in eligible_samples}
+        split_groups: list[DuplicateGroup] = [
+            group
+            for group in duplicates.groups
+            if all(member in eligible_ids for member in group.members)
+        ]
         try:
-            for item in prepared:
-                extension = item.sample.image.extension
-                image_name = f"{item.output_name}{extension}"
-                label_name = f"{item.output_name}.txt"
-                shutil.copy2(
-                    item.source_image, image_dir / image_name
-                )
-                _write_label(label_dir / label_name, item.label_text)
-                objects_written += item.object_count
-                present_classes.update(item.present_classes)
-                item.sample.state = SampleState.WRITTEN
-            _verify_written(image_dir, label_dir, len(prepared))
-        except (OSError, PipelineIOError) as exc:
+            split_result = split_samples(
+                eligible_samples,
+                seed=options.seed,
+                ratios=options.ratios,
+                duplicate_groups=split_groups,
+            )
+        except ValueError as exc:
+            raise PipelineConfigError(f"invalid split configuration: {exc}") from exc
+
+        final_anomalies = [*anomalies, *split_result.anomalies]
+        failed_invariants = [
+            key for key, ok in split_result.invariants.items() if not ok
+        ]
+        if failed_invariants:
             _finish_failure(
                 staging=staging,
                 output=output,
                 kwargs=kwargs,
-                anomalies=anomalies,
+                anomalies=final_anomalies,
+                fingerprint=fingerprint,
+                quarantined=quarantined,
+                subset_roots=subset_roots,
+                message=f"split invariant failed: {', '.join(sorted(failed_invariants))}",
+                exit_code=3,
+                discard_dataset=True,
+            )
+
+        by_id = {item.sample.sample_id: item for item in prepared}
+        objects_written = 0
+        present_classes: set[int] = set()
+        try:
+            for name in SPLIT_NAMES:
+                (staging / "images" / name).mkdir(parents=True, exist_ok=True)
+                (staging / "labels" / name).mkdir(parents=True, exist_ok=True)
+            for name in SPLIT_NAMES:
+                assignments = split_result.splits[name].assignments
+                image_dir = staging / "images" / name
+                label_dir = staging / "labels" / name
+                for assignment in assignments:
+                    item = by_id[assignment.sample_id]
+                    shutil.copy2(
+                        item.source_image,
+                        image_dir / Path(assignment.output_image).name,
+                    )
+                    _write_label(
+                        label_dir / Path(assignment.output_label).name,
+                        item.label_text,
+                    )
+                    objects_written += item.object_count
+                    present_classes.update(item.present_classes)
+                    item.sample.state = SampleState.WRITTEN
+                _verify_written(image_dir, label_dir, len(assignments))
+            _verify_split_output(staging, split_result)
+        except (OSError, PipelineIOError, KeyError) as exc:
+            _finish_failure(
+                staging=staging,
+                output=output,
+                kwargs=kwargs,
+                anomalies=final_anomalies,
                 fingerprint=fingerprint,
                 quarantined=quarantined,
                 subset_roots=subset_roots,
@@ -686,7 +776,7 @@ def run_conversion(options: ConversionOptions) -> PipelineResult:
                 staging=staging,
                 output=output,
                 kwargs=kwargs,
-                anomalies=anomalies,
+                anomalies=final_anomalies,
                 fingerprint=_unavailable_fingerprint(exc),
                 quarantined=quarantined,
                 subset_roots=subset_roots,
@@ -715,7 +805,7 @@ def run_conversion(options: ConversionOptions) -> PipelineResult:
                 staging=staging,
                 output=output,
                 kwargs=kwargs,
-                anomalies=[*anomalies, changed_anomaly],
+                anomalies=[*final_anomalies, changed_anomaly],
                 fingerprint=final_fingerprint,
                 quarantined=quarantined,
                 subset_roots=subset_roots,
@@ -724,30 +814,62 @@ def run_conversion(options: ConversionOptions) -> PipelineResult:
                 discard_dataset=True,
             )
 
-        write_validation_report(
+        split_result.invariants["source_unchanged"] = True
+        final_report = write_validation_report(
             staging / "validation_report.json",
             **{
                 **kwargs,
                 "fingerprint": final_fingerprint,
                 "written_samples": len(prepared),
                 "quarantined_samples": len(quarantined),
+                "anomalies": final_anomalies,
             },
         )
+        if not final_report["summary"]["accounting_ok"]:
+            _finish_failure(
+                staging=staging,
+                output=output,
+                kwargs=kwargs,
+                anomalies=final_anomalies,
+                fingerprint=final_fingerprint,
+                quarantined=quarantined,
+                subset_roots=subset_roots,
+                message="source image accounting invariant failed",
+                exit_code=3,
+                discard_dataset=True,
+            )
+
+        # The manifest is the last artifact written and only after every check.
+        try:
+            write_split_manifest(
+                staging / "split_manifest.json",
+                dataset_name="NEU-DET",
+                source_root=discovery.dataset.root,
+                source_subsets=[subset.name for subset in discovery.subsets],
+                fingerprint=final_fingerprint,
+                seed=options.seed,
+                ratios=options.ratios,
+                on_anomaly=options.on_anomaly,
+                split_result=split_result,
+            )
+        except OSError as exc:
+            raise PipelineIOError(f"cannot write split manifest: {exc}") from exc
+
         _commit(staging, output, success=True)
 
         return PipelineResult(
             output=output,
-            split=split,
             samples_written=len(prepared),
             images_written=len(prepared),
             labels_written=len(prepared),
             objects_written=objects_written,
             present_classes=sorted(present_classes),
-            anomalies=anomalies,
+            anomalies=final_anomalies,
             fingerprint=final_fingerprint,
             quarantined_samples=len(quarantined),
             gate_status=gate,
             report_path=output / "validation_report.json",
+            manifest_path=output / "split_manifest.json",
         )
     finally:
         _remove_tree(staging)

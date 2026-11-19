@@ -301,8 +301,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(
         "detection prepare: "
         f"wrote {result.samples_written} image(s) and {result.labels_written} "
-        f"label(s) to {result.output}/images/{result.split} and "
-        f"{result.output}/labels/{result.split}; "
+        f"label(s) to {result.output}/images/{{{result.split}}} and "
+        f"{result.output}/labels/{{{result.split}}}; "
         f"objects={result.objects_written} classes={result.present_classes} "
         f"warnings={warnings} info={infos}; source unchanged"
     )

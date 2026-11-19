@@ -350,3 +350,204 @@ def write_validation_report(path: str | Path, **payload: Any) -> dict[str, Any]:
     report = build_validation_report(**payload)
     write_json(path, report)
     return report
+
+
+# --- split_manifest.json (T030) --------------------------------------------
+
+
+SPLIT_INVARIANT_KEYS: tuple[str, ...] = (
+    "pairwise_disjoint_sample_id",
+    "pairwise_disjoint_output_path",
+    "pairwise_disjoint_sha256",
+    "all_eligible_assigned",
+    "duplicate_groups_atomic",
+    "no_cross_subset_pairing",
+    "source_unchanged",
+    "class_mapping_fixed",
+)
+
+
+def _enum_value(value: Any) -> Any:
+    return getattr(value, "value", value)
+
+
+def _class_counts(mapping: Any) -> dict[str, int]:
+    values = dict(mapping or {})
+    return {
+        str(class_id): _count(f"class_counts[{class_id}]", int(values.get(class_id, 0)))
+        for class_id in range(6)
+    }
+
+
+def _assignment_mapping(assignment: Any) -> dict[str, Any]:
+    return {
+        "sample_id": str(assignment.sample_id),
+        "source_subset": str(assignment.source_subset),
+        "source_image": str(assignment.source_image),
+        "source_xml": str(assignment.source_xml),
+        "output_image": str(assignment.output_image),
+        "output_label": str(assignment.output_label),
+        "sha256": str(assignment.sha256),
+        "present_classes": sorted(
+            int(class_id) for class_id in (assignment.present_classes or [])
+        ),
+        "object_count": _count(
+            "object_count", int(getattr(assignment, "object_count", 0))
+        ),
+    }
+
+
+def _split_mapping(split: Any, total_images: int) -> dict[str, Any]:
+    assignments = sorted(
+        (_assignment_mapping(item) for item in split.assignments),
+        key=lambda item: item["sample_id"],
+    )
+    image_counts: dict[str, int] = {str(class_id): 0 for class_id in range(6)}
+    for assignment in assignments:
+        for class_id in assignment["present_classes"]:
+            if class_id not in range(6):
+                raise ValueError(f"unknown class id in split assignment: {class_id}")
+            image_counts[str(class_id)] += 1
+
+    images = len(assignments)
+    return {
+        "images": images,
+        "objects": _count("split.objects", int(getattr(split, "objects", 0))),
+        "target_ratio": float(split.target_ratio),
+        "actual_ratio": (images / total_images) if total_images else 0.0,
+        "image_counts_by_class": image_counts,
+        "object_counts_by_class": _class_counts(
+            getattr(split, "object_counts_by_class", None)
+        ),
+        "source_subset_counts": {
+            str(name): _count(f"source_subset_counts[{name}]", int(value))
+            for name, value in sorted(
+                dict(getattr(split, "source_subset_counts", {}) or {}).items()
+            )
+        },
+        "assignments": assignments,
+    }
+
+
+def _duplicate_group_mapping(group: Any) -> dict[str, Any]:
+    return {
+        "group_id": str(group.group_id),
+        "sha256": str(group.sha256),
+        "members": sorted(str(member) for member in group.members),
+        "labels_consistent": bool(group.labels_consistent),
+        "assigned_split": (
+            None
+            if getattr(group, "assigned_split", None) is None
+            else str(group.assigned_split)
+        ),
+        "state": str(_enum_value(getattr(group, "state", "grouped"))),
+    }
+
+
+def build_split_manifest(
+    *,
+    dataset_name: str = "NEU-DET",
+    source_root: str | Path,
+    source_subsets: Sequence[str] = (),
+    fingerprint: Mapping[str, Any] | SourceFingerprint | None = None,
+    seed: int = 42,
+    ratios: Mapping[str, float] | Sequence[float] = (0.75, 0.15, 0.10),
+    on_anomaly: str = "fail",
+    split_result: Any,
+    generated_at: str | None = None,
+) -> dict[str, Any]:
+    """Build the ``split_manifest.json`` payload without touching the disk.
+
+    ``actual_ratio`` is always recomputed as ``images / totals.images`` and every
+    invariant must be true; a failed invariant is a hard error so no caller can
+    accidentally publish an inconsistent manifest.
+    """
+    raw_invariants = dict(getattr(split_result, "invariants", None) or {})
+    missing = [key for key in SPLIT_INVARIANT_KEYS if key not in raw_invariants]
+    if missing:
+        raise ValueError(f"split manifest is missing invariants: {', '.join(missing)}")
+    invariants = {
+        key: bool(raw_invariants[key]) for key in SPLIT_INVARIANT_KEYS
+    }
+    failed = [key for key, value in invariants.items() if not value]
+    if failed:
+        raise ValueError(f"split invariant failed: {', '.join(failed)}")
+
+    raw_splits = dict(getattr(split_result, "splits", None) or {})
+    absent = [name for name in SPLIT_NAMES if name not in raw_splits]
+    if absent:
+        raise ValueError(f"split manifest is missing splits: {', '.join(absent)}")
+
+    split_mappings = {
+        name: _split_mapping(raw_splits[name], 0) for name in SPLIT_NAMES
+    }
+    total_images = sum(split_mappings[name]["images"] for name in SPLIT_NAMES)
+    for name in SPLIT_NAMES:
+        split_mappings[name]["actual_ratio"] = (
+            split_mappings[name]["images"] / total_images if total_images else 0.0
+        )
+
+    totals = {
+        "images": total_images,
+        "objects": sum(split_mappings[name]["objects"] for name in SPLIT_NAMES),
+        "image_counts_by_class": {
+            str(class_id): count
+            for class_id in range(6)
+            for count in [
+                sum(
+                    split_mappings[name]["image_counts_by_class"][str(class_id)]
+                    for name in SPLIT_NAMES
+                )
+            ]
+            if count
+        },
+        "object_counts_by_class": {
+            str(class_id): count
+            for class_id in range(6)
+            for count in [
+                sum(
+                    split_mappings[name]["object_counts_by_class"][str(class_id)]
+                    for name in SPLIT_NAMES
+                )
+            ]
+            if count
+        },
+    }
+
+    if generated_at is None:
+        generated_at = (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+
+    return {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "generated_at": generated_at,
+        "dataset": {
+            "name": str(dataset_name),
+            "source_root": str(source_root),
+            "source_fingerprint": _fingerprint_mapping(fingerprint),
+            "source_subsets": sorted(str(name) for name in source_subsets),
+        },
+        "config": build_config(seed=seed, ratios=ratios, on_anomaly=on_anomaly),
+        "classes": class_mapping(),
+        "totals": totals,
+        "splits": split_mappings,
+        "duplicate_groups": sorted(
+            (
+                _duplicate_group_mapping(group)
+                for group in (getattr(split_result, "duplicate_groups", None) or [])
+            ),
+            key=lambda group: group["group_id"],
+        ),
+        "invariants": invariants,
+    }
+
+
+def write_split_manifest(path: str | Path, **payload: Any) -> dict[str, Any]:
+    """Write ``split_manifest.json`` atomically and return the written payload."""
+    manifest = build_split_manifest(**payload)
+    write_json(path, manifest)
+    return manifest

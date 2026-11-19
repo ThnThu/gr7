@@ -28,11 +28,12 @@ def _tree_hashes(root: Path) -> dict[str, str]:
 
 
 def _dataset_hashes(root: Path) -> dict[str, str]:
-    """Dataset artifacts only; ``generated_at`` makes the report non-byte-stable."""
+    """Dataset artifacts only; timestamped JSON files are not byte-stable."""
     return {
         path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted(root.rglob("*"))
-        if path.is_file() and path.name != "validation_report.json"
+        if path.is_file()
+        and path.name not in {"validation_report.json", "split_manifest.json"}
     }
 
 
@@ -104,10 +105,15 @@ def test_cli_converts_paired_samples_into_interim_train_split(
 
     assert _run(source, output) == 0
 
-    image_dir = output / "images" / "train"
-    label_dir = output / "labels" / "train"
-    images = sorted(image_dir.iterdir())
-    labels = sorted(label_dir.iterdir())
+    image_dir = output / "images"
+    label_dir = output / "labels"
+    images = sorted(path for path in image_dir.glob("*/*") if path.is_file())
+    labels = sorted(path for path in label_dir.glob("*/*") if path.is_file())
+
+    def label_for(stem: str) -> Path:
+        matches = sorted(label_dir.glob(f"*/{stem}.txt"))
+        assert len(matches) == 1
+        return matches[0]
 
     assert len(images) == 5
     assert len(labels) == 5
@@ -119,21 +125,30 @@ def test_cli_converts_paired_samples_into_interim_train_split(
         "c",
     }
     for image in images:
-        label = label_dir / f"{image.stem}.txt"
+        label = label_for(image.stem)
         assert label.is_file()
+        assert label.parent.name == image.parent.name
 
-    assert (label_dir / "train_a.txt").read_text(encoding="utf-8").splitlines() == [
+    assert label_for("train_a").read_text(encoding="utf-8").splitlines() == [
         "0 0.250000 0.250000 0.300000 0.300000",
         "2 0.650000 0.650000 0.300000 0.300000",
     ]
-    assert (label_dir / "validation_a.txt").read_text(
-        encoding="utf-8"
-    ).splitlines() == ["5 0.500000 0.500000 1.000000 1.000000"]
-    assert (label_dir / "empty.txt").stat().st_size == 0
+    assert label_for("validation_a").read_text(encoding="utf-8").splitlines() == [
+        "5 0.500000 0.500000 1.000000 1.000000"
+    ]
+    assert label_for("empty").stat().st_size == 0
 
     assert (output / "images").is_dir()
-    assert sorted(path.name for path in (output / "images").iterdir()) == ["train"]
-    assert sorted(path.name for path in (output / "labels").iterdir()) == ["train"]
+    assert sorted(path.name for path in (output / "images").iterdir()) == [
+        "test",
+        "train",
+        "validation",
+    ]
+    assert sorted(path.name for path in (output / "labels").iterdir()) == [
+        "test",
+        "train",
+        "validation",
+    ]
 
     report = _read_report(output)
     assert report["feature"] == "001-neu-det-data-preparation"
@@ -141,7 +156,7 @@ def test_cli_converts_paired_samples_into_interim_train_split(
     assert report["summary"]["written_samples"] == 5
     assert report["summary"]["accounted_images"] == 5
     assert report["summary"]["accounting_ok"] is True
-    assert not (output / "split_manifest.json").exists()
+    assert (output / "split_manifest.json").is_file()
     assert not (output / "dataset.yaml").exists()
     assert _tree_hashes(source) == before
 
@@ -152,11 +167,16 @@ def test_output_images_are_copies_not_links(build_source_tree, tmp_path: Path) -
 
     assert _run(source, output) == 0
 
+    def output_image_for(stem: str) -> Path:
+        matches = sorted((output / "images").glob(f"*/{stem}.jpg"))
+        assert len(matches) == 1
+        return matches[0]
+
     pairs = [
-        (source / "train" / "images" / "b.jpg", output / "images" / "train" / "b.jpg"),
+        (source / "train" / "images" / "b.jpg", output_image_for("b")),
         (
             source / "validation" / "images" / "c.jpg",
-            output / "images" / "train" / "c.jpg",
+            output_image_for("c"),
         ),
     ]
     for source_image, output_image in pairs:
@@ -249,7 +269,7 @@ def test_existing_output_requires_overwrite_then_replaces_artifacts(
 
     assert _run(source, output, "--overwrite") == 0
     assert (output / "images" / "train").is_dir()
-    assert len(list((output / "images" / "train").iterdir())) == 5
+    assert len(list((output / "images").glob("*/*"))) == 5
 
 
 def test_output_inside_source_exits_2_and_preserves_source(
@@ -285,6 +305,7 @@ def test_rerun_with_overwrite_is_deterministic(build_source_tree, tmp_path: Path
         if first_report_path.is_file()
         else None
     )
+    first_manifest = _read_manifest(output)
 
     assert _run(source, output, "--overwrite") == 0
     second = _dataset_hashes(output)
@@ -294,14 +315,18 @@ def test_rerun_with_overwrite_is_deterministic(build_source_tree, tmp_path: Path
         if second_report_path.is_file()
         else None
     )
+    second_manifest = _read_manifest(output)
 
     assert first == second
     if first_report is not None and second_report is not None:
         first_report.pop("generated_at", None)
         second_report.pop("generated_at", None)
         assert first_report == second_report
-    assert len([name for name in second if name.startswith("images/train/")]) == 5
-    assert len([name for name in second if name.startswith("labels/train/")]) == 5
+    first_manifest.pop("generated_at", None)
+    second_manifest.pop("generated_at", None)
+    assert first_manifest == second_manifest
+    assert len([name for name in second if name.startswith("images/")]) == 5
+    assert len([name for name in second if name.startswith("labels/")]) == 5
 
 
 def test_source_change_after_write_exits_3_and_discards_output(
@@ -426,7 +451,7 @@ def test_us2_quarantine_copies_only_paired_invalid_samples(
     assert [path.name for path in (output / "labels" / "train").iterdir()] == [
         "good.txt"
     ]
-    assert not (output / "split_manifest.json").exists()
+    assert (output / "split_manifest.json").is_file()
     assert _tree_hashes(source) == before
 
 
