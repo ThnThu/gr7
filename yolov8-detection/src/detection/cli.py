@@ -1,9 +1,10 @@
-"""Command-line entry point for Feature 001.
+"""Command-line entry point for Feature 001 (T024).
 
 The CLI parses ``detection prepare``, runs the source/output safety checks and
-then delegates to the US1 conversion pipeline. Later user stories extend the
-pipeline with the report, split and manifest artifacts; this module already
-maps every documented failure to its stable exit code.
+delegates to the conversion pipeline with the parsed ``seed``, ``ratios`` and
+``on_anomaly`` values so the report config reflects the actual invocation.
+Detailed errors go to stderr; every documented failure maps to a stable exit
+code and structured results live in the JSON artifacts, not stdout.
 """
 
 from __future__ import annotations
@@ -271,6 +272,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output=config.output,
                 overwrite=config.overwrite,
                 on_anomaly=config.on_anomaly,
+                seed=config.seed,
+                ratios=config.ratios,
             )
         )
     except CliError as exc:
