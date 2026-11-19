@@ -1,9 +1,12 @@
-"""US1 conversion stage and reusable output writer (T015).
+"""US1 conversion stage and reusable output writer (T015, updated for T020).
 
-The pipeline runs discover -> pair -> verify -> convert in memory first. Output
+The pipeline runs discover -> pair -> validate in memory first. Sample
+validation is delegated to :func:`detection.data.validator.validate_samples`,
+which reuses image verification and annotation conversion and owns
+``size_mismatch``/``filename_mismatch``/``empty_annotation`` checks. Output
 directories are created only when no blocking anomaly was found, so a failing
 run leaves the output untouched. Source images are copied with
-:func:`shutil.copy2`; labels are written as UTF-8 text with ``\\n`` endings and
+:func:`shutil.copy2`; labels are written as UTF-8 text with ``\n`` endings and
 an empty annotation becomes a zero-byte file.
 
 Until User Story 3 supplies real split assignments, every converted sample is
@@ -18,7 +21,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .converter import ConversionResult, convert_annotation
 from .discovery import (
     DiscoveryError,
     PairingResult,
@@ -30,10 +32,11 @@ from .discovery import (
 from .models import (
     AnomalyRecord,
     MatchedSample,
+    SampleState,
     Severity,
     SourceFingerprint,
 )
-from .validator import ImageVerification, verify_image
+from .validator import validate_samples
 
 INTERIM_SPLIT = "train"
 KNOWN_ARTIFACTS = ("images", "labels", "rejected")
@@ -104,8 +107,10 @@ class _PreparedSample:
     sample: MatchedSample
     source_image: Path
     source_annotation: Path
-    verification: ImageVerification
-    conversion: ConversionResult
+    sha256: str | None
+    label_text: str
+    object_count: int
+    present_classes: list[int]
     output_name: str = ""
 
 
@@ -117,56 +122,12 @@ def _is_relative_to(path: Path, other: Path) -> bool:
     return True
 
 
-def _source_relative(root: Path, path: Path) -> str:
-    try:
-        return path.relative_to(root).as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
 def _error_anomalies(anomalies: list[AnomalyRecord]) -> list[AnomalyRecord]:
     return [
         anomaly
         for anomaly in anomalies
         if anomaly.severity == Severity.ERROR
     ]
-
-
-def _size_mismatch(
-    sample: MatchedSample,
-    source_path: str,
-    declared: dict[str, int],
-    actual: dict[str, int],
-) -> AnomalyRecord:
-    return AnomalyRecord(
-        code="size_mismatch",
-        severity="warning",
-        scope="sample",
-        sample_id=sample.sample_id,
-        source_subset=sample.source_subset,
-        paths=[source_path],
-        reason=(
-            "XML <size> does not match the actual image size; the actual "
-            "image size is used for normalization"
-        ),
-        details={"declared": declared, "actual": actual},
-    )
-
-
-def _empty_annotation(
-    sample: MatchedSample,
-    source_path: str,
-) -> AnomalyRecord:
-    return AnomalyRecord(
-        code="empty_annotation",
-        severity="info",
-        scope="sample",
-        sample_id=sample.sample_id,
-        source_subset=sample.source_subset,
-        paths=[source_path],
-        reason="XML contains zero objects; a zero-byte label is written",
-        details={"object_count": 0},
-    )
 
 
 def _apply_overwrite(output: Path) -> None:
@@ -234,9 +195,7 @@ def _assign_output_names(samples: list[_PreparedSample]) -> None:
         ordered = sorted(group, key=lambda item: item.sample.sample_id)
         for length in (8, 12, 16, 32, 64):
             candidates = {
-                item.sample.sample_id: (
-                    f"{name}_{(item.verification.sha256 or '')[:length]}"
-                )
+                item.sample.sample_id: f"{name}_{(item.sha256 or '')[:length]}"
                 for item in ordered
             }
             if len(set(candidates.values())) == len(ordered):
@@ -304,7 +263,7 @@ def _discard_written_split(output: Path, split: str) -> None:
 
 
 def run_conversion(options: ConversionOptions) -> PipelineResult:
-    """Run the US1 discover/pair/verify/convert/write pipeline.
+    """Run the US1 discover/pair/validate/write pipeline.
 
     Raises:
         PipelineConfigError: unsafe source/output combination (exit 2).
@@ -328,77 +287,35 @@ def run_conversion(options: ConversionOptions) -> PipelineResult:
 
     discovery = discover_source(source)
     pairing: PairingResult = pair_samples(discovery)
+    validation = validate_samples(pairing.samples, discovery.dataset.root)
 
     anomalies: list[AnomalyRecord] = [
         *discovery.anomalies,
         *pairing.anomalies,
+        *validation.anomalies,
     ]
-    prepared: list[_PreparedSample] = []
 
     subset_roots = {
         subset.name: subset.images_dir.parent for subset in discovery.subsets
     }
 
-    for sample in pairing.samples:
+    prepared: list[_PreparedSample] = []
+    for sample in validation.samples:
+        if sample.state == SampleState.INVALID:
+            continue
         subset_root = subset_roots[sample.source_subset]
         source_image = subset_root / sample.image.relative_path
         source_annotation = subset_root / sample.annotation.relative_path
-        image_relative = _source_relative(discovery.dataset.root, source_image)
-        annotation_relative = _source_relative(
-            discovery.dataset.root, source_annotation
-        )
-
-        verification = verify_image(
-            source_image,
-            sample_id=sample.sample_id,
-            source_subset=sample.source_subset,
-            source_path=image_relative,
-        )
-        anomalies.extend(verification.anomalies)
-        if not verification.valid:
-            sample.state = "invalid"
-            continue
-
-        conversion = convert_annotation(
-            source_annotation,
-            image_width=int(verification.width or 0),
-            image_height=int(verification.height or 0),
-            sample_id=sample.sample_id,
-            source_subset=sample.source_subset,
-            source_path=annotation_relative,
-        )
-        anomalies.extend(conversion.anomalies)
-
-        if conversion.declared_size is not None and conversion.declared_size != {
-            "width": verification.width,
-            "height": verification.height,
-        }:
-            anomalies.append(
-                _size_mismatch(
-                    sample,
-                    annotation_relative,
-                    conversion.declared_size,
-                    {
-                        "width": int(verification.width or 0),
-                        "height": int(verification.height or 0),
-                    },
-                )
-            )
-
-        if not conversion.valid:
-            sample.state = "invalid"
-            continue
-
-        if conversion.object_count == 0:
-            anomalies.append(_empty_annotation(sample, annotation_relative))
-
+        label_text = "".join(f"{line}\n" for line in sample.label_lines)
         prepared.append(
             _PreparedSample(
                 sample=sample,
                 source_image=source_image,
                 source_annotation=source_annotation,
-                verification=verification,
-                conversion=conversion,
+                sha256=getattr(sample.image, "sha256", None),
+                label_text=label_text,
+                object_count=len(sample.label_lines),
+                present_classes=list(sample.present_classes or []),
             )
         )
 
@@ -435,11 +352,11 @@ def run_conversion(options: ConversionOptions) -> PipelineResult:
             destination_label = label_dir / label_name
 
             shutil.copy2(item.source_image, destination_image)
-            _write_label(destination_label, item.conversion.label_text)
+            _write_label(destination_label, item.label_text)
 
-            objects_written += item.conversion.object_count
-            present_classes.update(item.conversion.present_classes)
-            item.sample.state = "written"
+            objects_written += item.object_count
+            present_classes.update(item.present_classes)
+            item.sample.state = SampleState.WRITTEN
 
         _verify_written(image_dir, label_dir, len(prepared))
     except (OSError, PipelineIOError):
