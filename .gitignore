@@ -12,6 +12,8 @@ env/
 **/venv/
 **/ENV/
 **/env/
+# Local venv for rebuilding Research/PHIEU_DANG_KY_DE_TAI.docx
+Research/.docxenv/
 
 # Packaging / build artifacts
 *.egg-info/

@@ -16,7 +16,7 @@
 
 **Ứng dụng AI phát hiện và phân vùng lỗi bề mặt sản phẩm công nghiệp bằng AI.**
 
-Đề tài tập trung vào bài toán nhận diện khuyết tật trên ảnh bề mặt sản phẩm công nghiệp bằng các mô hình học sâu. Trong phạm vi tổng thể, hệ thống được thiết kế gồm hai nhiệm vụ thị giác độc lập: (i) phát hiện vị trí và loại lỗi (Object Detection) và (ii) phân vùng vùng lỗi ở mức điểm ảnh (Semantic Segmentation). Tầng ứng dụng có thể bổ sung mô tả/hỏi đáp tiếng Việt từ kết quả có cấu trúc (JSON) bằng LLM/prompt có sẵn; đây là phần hỗ trợ trình bày, không thay thế nhiệm vụ thị giác.
+Đề tài tập trung vào bài toán nhận diện khuyết tật trên ảnh bề mặt sản phẩm công nghiệp bằng các mô hình học sâu. Cấu trúc hai nhiệm vụ thị giác độc lập (Detection/Segmentation) và vai trò của tầng ứng dụng được trình bày tại **mục 11.1**; phạm vi và giới hạn tại **mục 7**.
 
 ## 2. Bối cảnh nghiên cứu
 
@@ -42,7 +42,7 @@ Xây dựng và đánh giá nguyên mẫu ứng dụng AI hỗ trợ phát hiệ
 
 | Mã | Mục tiêu kỹ thuật | Trạng thái |
 |---|---|---|
-| O1 | Chuẩn bị dữ liệu NEU-DET: chuyển VOC XML sang nhãn YOLO, kiểm tra tính toàn vẹn, sinh báo cáo/manifest và chia tập tái lập được | **Kế hoạch/đang triển khai (Feature 001)** — [CẦN XÁC NHẬN: mức hoàn thành nghiệm thu] |
+| O1 | Chuẩn bị dữ liệu NEU-DET: chuyển VOC XML sang nhãn YOLO, kiểm tra tính toàn vẹn, sinh báo cáo/manifest và chia tập tái lập được | **Đã hoàn thành (Feature 001) — 36/36 task, 222 test đạt** |
 | O2 | Huấn luyện và tinh chỉnh YOLOv8s cho phát hiện 6 lớp lỗi trên NEU-DET; chọn checkpoint tốt nhất theo tập validation | **Kế hoạch** |
 | O3 | Đánh giá YOLOv8s trên tập test độc lập (Precision, Recall, mAP@0.5, mAP@0.5:0.95) và phân tích lỗi | **Kế hoạch** |
 | O4 | Huấn luyện/đánh giá U-Net trên NEU-Seg (3 lớp lỗi có mask) theo giao thức riêng | **Kế hoạch** (phụ thuộc thành viên/nguồn lực — [CẦN XÁC NHẬN]) |
@@ -63,8 +63,7 @@ Xây dựng và đánh giá nguyên mẫu ứng dụng AI hỗ trợ phát hiệ
 
 - **Detection (NEU-DET):** phát hiện 6 lớp lỗi bề mặt thép bằng YOLOv8s; chuẩn bị nhãn YOLO, huấn luyện, đánh giá và phân tích lỗi (trọng tâm phân công Thành viên 2).
 - **Segmentation (NEU-Seg):** phân vùng 3 lớp lỗi có mask bằng U-Net; huấn luyện/đánh giá độc lập theo bộ chỉ số phân vùng. NEU-Seg và NEU-DET là hai bộ dữ liệu/nhánh nhiệm vụ riêng; **không gộp thành một dataset chung**.
-- **Tầng ứng dụng:** hiển thị kết quả thị giác; tùy chọn sinh mô tả/hỏi đáp tiếng Việt từ JSON bằng LLM/prompt có sẵn, **không fine-tune**, có cơ chế fallback khi lỗi/timeout/offline; tầng này **không tạo/sửa box, mask hay nhãn**.
-- **Baseline:** so sánh trong cùng nhiệm vụ (ví dụ Detection so với baseline detection; Segmentation so với baseline segmentation). Không so sánh trực tiếp mAP với IoU/Dice.
+- **Tầng ứng dụng và baseline:** áp dụng nguyên tắc tại **mục 11.1** và **mục 12** — hiển thị kết quả thị giác, tùy chọn sinh mô tả/hỏi đáp tiếng Việt từ JSON (LLM/prompt có sẵn, **không fine-tune**, có fallback khi lỗi/timeout/offline, **không tạo/sửa box, mask hay nhãn**); so sánh trong cùng nhiệm vụ, **không so sánh trực tiếp mAP với IoU/Dice**.
 
 ### 7.2. Ngoài phạm vi
 
@@ -83,7 +82,7 @@ Xây dựng và đánh giá nguyên mẫu ứng dụng AI hỗ trợ phát hiệ
 
 - **Người dùng mục tiêu:** nhân viên kiểm tra chất lượng (QC/QA), bộ phận kiểm định, người nghiên cứu/giảng dạy về kiểm tra bề mặt.
 - **Bài toán thực tiễn:** kiểm tra thủ công tốn thời gian, dễ thiếu nhất quán, khó phát hiện lỗi nhỏ và khó lưu vết theo lô/ảnh. Ứng dụng hỗ trợ cung cấp vị trí/loại lỗi và (ở nhánh phân vùng) vùng ảnh hưởng để phục vụ quan sát và đối chiếu.
-- **Nguyên tắc sử dụng:** kết quả AI chỉ mang tính hỗ trợ; quyết định chấp nhận/loại sản phẩm thuộc về con người và quy trình QC của đơn vị.
+- **Nguyên tắc sử dụng:** theo **mục 4** — kết quả AI chỉ mang tính hỗ trợ; quyết định chấp nhận/loại sản phẩm thuộc về con người và quy trình QC của đơn vị.
 
 ## 9. Mô tả dữ liệu
 
@@ -95,6 +94,7 @@ Xây dựng và đánh giá nguyên mẫu ứng dụng AI hỗ trợ phát hiệ
 - **Nhãn:** Bounding box dạng Pascal VOC XML.
 - **Cấu trúc nguồn quan sát trong kho dự án:** `train/` (ảnh + chú thích) và `validation/` (ảnh + chú thích) — [CẦN XÁC NHẬN: mô tả chính thức từ nguồn dữ liệu gốc].
 - **Tình trạng/giấy phép:** [CẦN XÁC NHẬN: giấy phép và điều khoản sử dụng NEU-DET].
+- **Kết quả kiểm tra thực tế (Feature 001):** nguồn có **1.800 ảnh / 1.800 XML** ghép cặp đủ, **4.189 box**; không có ảnh hỏng, XML lỗi, lớp lạ hay bbox sai. Có **174 cảnh báo `filename_mismatch`** (thẻ `<filename>` trong XML khác tên ảnh, **không ảnh hưởng ghép cặp**). Một nhóm ảnh trùng nội dung (`patches_101`, `patches_105`; nhãn lệch nhẹ tọa độ) đã bị cách ly; tập hợp lệ còn **1.798 ảnh / 4.183 box** (chi tiết tại **mục 10**).
 
 ### 9.2. NEU-Seg (Semantic Segmentation)
 
@@ -107,18 +107,22 @@ Xây dựng và đánh giá nguyên mẫu ứng dụng AI hỗ trợ phát hiệ
 ### 9.3. Lưu ý dữ liệu
 
 - Hai bộ dữ liệu phục vụ hai nhiệm vụ/nhánh mô hình khác nhau, được chuẩn bị và đánh giá riêng.
-- Cần rà soát trùng lặp/chồng lấn nội dung giữa các tập/bộ khi thực nghiệm (nếu áp dụng) và ghi nhận trong báo cáo dữ liệu — [CẦN XÁC NHẬN: kết quả audit trùng lặp cuối cùng].
+- Rà soát trùng lặp/chồng lấn nội dung giữa các tập/bộ đã được ghi nhận trong báo cáo dữ liệu Feature 001: 1 nhóm trùng trên NEU-DET đã bị cách ly; chi tiết tại **mục 9.1** và **mục 10**.
 
 ## 10. Chính sách chia tập dữ liệu (NEU-DET, Feature 001)
 
 Áp dụng cho pipeline chuẩn bị dữ liệu phát hiện đối tượng (NEU-DET):
 
-| Tập | Tỷ lệ | Số ảnh mục tiêu | Ghi chú |
+| Tập | Số ảnh (n = 1.798) | Tỷ lệ thực tế | Ghi chú |
 |---|---:|---:|---|
-| Train | 75% | 1.350 | Huấn luyện mô hình |
-| Validation | 15% | 270 | Chọn siêu tham số/checkpoint |
-| Test | 10% | 180 | Đánh giá cuối, không dùng để chọn mô hình |
-| **Tổng** | **100%** | **1.800** | Toàn bộ ảnh NEU-DET sau khi xử lý hợp lệ theo chính sách |
+| Train | 1.348 | 74,97% | Huấn luyện mô hình |
+| Validation | 270 | 15,02% | Chọn siêu tham số/checkpoint |
+| Test | 180 | 10,01% | Đánh giá cuối, không dùng để chọn mô hình |
+| **Tổng** | **1.798** | **100%** | 1.800 ảnh nguồn trừ 2 ảnh trong 1 nhóm trùng bị cách ly |
+
+> **Ghi chú (1.800 mẫu):** nếu giữ đúng 1.800 ảnh, kết quả lý thuyết theo cùng chính sách 75/15/10 là **Train 1.350 / Validation 270 / Test 180**.
+
+> **Kiểm tra sau chia:** cả 6 lớp đều có mặt ở cả ba tập; **8/8 bất biến** trong `split_manifest.json` đạt.
 
 - **Random seed:** `42` (tái lập kết quả chia tập khi dữ liệu và cấu hình không đổi).
 - **Chiến lược chia:** **phân tầng đa nhãn (deterministic multi-label stratification)** theo tập lớp xuất hiện trong mỗi ảnh, nhằm giữ phân bố lớp ổn định giữa các tập.
@@ -144,11 +148,11 @@ Kết quả hai nhánh được thu thập và hiển thị đồng thời. Nế
 2. Xác minh ảnh, phân tích VOC XML, kiểm tra class mapping và bounding box.
 3. Phát hiện và ghi nhận bất thường (thiếu cặp, lớp không hợp lệ, tọa độ sai, trùng nội dung, v.v.) theo chính sách fail/quarantine đã cấu hình.
 4. Chuyển đổi sang nhãn YOLO chuẩn hóa; tạo split train/validation/test (75/15/10, seed 42, stratification đa nhãn, chống rò rỉ nhóm trùng).
-5. Sinh `validation_report.json`, `split_manifest.json` và cấu trúc dữ liệu đầu ra phục vụ huấn luyện — **kế hoạch theo đặc tả Feature 001**; [CẦN XÁC NHẬN: trạng thái nghiệm thu và đường dẫn artifact thực tế].
+5. Sinh `validation_report.json`, `split_manifest.json` và cấu trúc dữ liệu đầu ra phục vụ huấn luyện — **artifact đã tồn tại sau Feature 001** (36/36 task, 222 test đạt); số liệu chi tiết tại **mục 9.1** và **mục 10**.
 
 ### 11.3. Huấn luyện và suy luận (dự kiến)
 
-- **Detection:** fine-tune YOLOv8s với đầu vào và siêu tham số phù hợp tài nguyên; chọn checkpoint tốt nhất trên validation. [CẦN XÁC NHẬN: kích thước đầu vào, epoch, batch, công cụ huấn luyện cụ thể].
+- **Detection:** fine-tune YOLOv8s từ trọng số pretrained `yolov8s.pt`; chọn checkpoint tốt nhất trên validation. **Cấu hình huấn luyện dự kiến:** `imgsz = 640`, `100 epoch`, `batch = 16`, huấn luyện trên **GPU**, `seed = 42` (chưa có kết quả huấn luyện chính thức).
 - **Segmentation:** huấn luyện U-Net (4 kênh đầu ra) với hàm mất mát phù hợp (ví dụ kết hợp Cross-Entropy và Dice) và chiến lược chọn checkpoint trên validation. [CẦN XÁC NHẬN: cấu hình chi tiết, encoder, kích thước ảnh].
 - **Suy luận:** tiền xử lý riêng cho từng nhánh, không chia sẻ trọng số/đặc trưng.
 
@@ -168,7 +172,7 @@ Không khẳng định kết quả huấn luyện, mAP/IoU/Dice hay so sánh đ�
 - Precision, Recall
 - mAP@0.5, mAP@0.5:0.95
 
-Đánh giá trên tập test độc lập (180 ảnh theo chính sách chia 75/15/10), không dùng để chọn checkpoint/siêu tham số.
+Đánh giá trên tập test độc lập (**180 ảnh test** theo split thực tế của Feature 001, n = 1.798), không dùng để chọn checkpoint/siêu tham số.
 
 ### 13.2. Segmentation (NEU-Seg, tập test)
 
@@ -228,7 +232,7 @@ Không khẳng định kết quả huấn luyện, mAP/IoU/Dice hay so sánh đ�
 | Tuần | Nội dung chính | Kết quả mong đợi |
 |---|---|---|
 | 1 | Khảo sát, chốt phạm vi, rà soát tài liệu/nguồn dữ liệu | Phiếu đăng ký, mô tả bài toán, kế hoạch chi tiết |
-| 2 | Chuẩn bị dữ liệu, thiết kế giao thức đánh giá, chạy/hoàn thiện Feature 001 | Bộ dữ liệu chuẩn bị (dự kiến), báo cáo kiểm tra |
+| 2 | Chuẩn bị dữ liệu, thiết kế giao thức đánh giá, hoàn thiện Feature 001 | Bộ dữ liệu chuẩn bị (Feature 001 hoàn tất), báo cáo kiểm tra |
 | 3 | Thiết lập baseline (Detection/Segmentation theo phạm vi) | Kết quả baseline ban đầu — [CẦN XÁC NHẬN] |
 | 4–5 | Huấn luyện/tinh chỉnh mô hình đề xuất | Mô hình và log thí nghiệm — [CẦN XÁC NHẬN] |
 | 6 | Tích hợp demo, (tùy chọn) tầng ngôn ngữ, kiểm thử lỗi | Bản demo — [CẦN XÁC NHẬN] |

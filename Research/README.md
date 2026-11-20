@@ -27,13 +27,14 @@ Các tệp trong `archive/` chỉ dùng để tham chiếu/đối chiếu nội 
 Yêu cầu: Python 3 và gói `python-docx`.
 
 ```bash
-# (tùy chọn) tạo môi trường tạm
-python3 -m venv /tmp/opencode/docxenv
-/tmp/opencode/docxenv/bin/pip install python-docx
-
-# sinh DOCX chính thức
 cd Research
-/tmp/opencode/docxenv/bin/python build_docx.py
+
+# tạo venv cục bộ .docxenv trong thư mục Research (đã được bỏ qua bởi .gitignore)
+python3 -m venv .docxenv
+.docxenv/bin/pip install python-docx
+
+# sinh DOCX chính thức từ PHIEU_DANG_KY_DE_TAI.md
+.docxenv/bin/python build_docx.py
 # hoặc, nếu đã cài python-docx trong môi trường hiện tại:
 # python3 build_docx.py
 ```
@@ -44,5 +45,5 @@ Script `build_docx.py` chỉ đọc `PHIEU_DANG_KY_DE_TAI.md` và ghi đè `PHIE
 
 - Mục đánh dấu **[CẦN XÁC NHẬN]** là thông tin chưa được xác minh/chưa chốt và phải được bổ sung trước khi nộp chính thức.
 - Tài liệu mô tả đề xuất/kế hoạch và các quyết định kỹ thuật đã chốt; **không** khẳng định kết quả thực nghiệm chưa thực hiện và **không** thay thế biên bản phê duyệt của giảng viên/hội đồng.
-- Chính sách chia tập NEU-DET (Feature 001): **Train 75% = 1.350**, **Validation 15% = 270**, **Test 10% = 180** (tổng 1.800), **seed = 42**, phân tầng đa nhãn xác định (deterministic multi-label stratification) và chống rò rỉ nhóm trùng (duplicate-group leakage prevention).
+- Chính sách chia tập NEU-DET (Feature 001 — đã hoàn tất: 36/36 task, 222 test đạt): trên **n = 1.798 ảnh hợp lệ** (1.800 ảnh nguồn trừ 1 nhóm trùng bị cách ly) — **Train 1.348 (74,97%)**, **Validation 270 (15,02%)**, **Test 180 (10,01%)**, **seed = 42**, phân tầng đa nhãn xác định (deterministic multi-label stratification) và chống rò rỉ nhóm trùng (duplicate-group leakage prevention). Lưu ý: với đúng 1.800 mẫu, kết quả lý thuyết là **1.350 / 270 / 180**. Chi tiết tại **mục 9.1** và **mục 10** của phiếu đăng ký.
 - Hai nhánh thị giác **độc lập**: YOLOv8s (Object Detection, NEU-DET) và U-Net (Semantic Segmentation, NEU-Seg); không gộp dataset, không so sánh trực tiếp mAP với IoU/Dice, và YOLOv8s không thực hiện segmentation.
