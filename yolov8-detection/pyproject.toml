@@ -28,3 +28,6 @@ include = ["detection*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: performance smoke tests excluded from the default suite",
+]

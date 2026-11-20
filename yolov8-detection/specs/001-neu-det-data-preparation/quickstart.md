@@ -210,13 +210,18 @@ jq '.splits | to_entries | map({split: .key, images: .value.images})' \
   /mnt/work/neu-det-processed/split_manifest.json
 ```
 
-Với 1.800 ảnh, mục tiêu là:
+Với **1.800 sample hợp lệ**, mục tiêu largest-remainder theo tỷ lệ 75/15/10 là:
 
 ```text
 train: 1350
 validation: 270
 test: 180
 ```
+
+> **Lưu ý (NEU-DET thực tế):** bộ NEU-DET gốc có 1.800 ảnh, nhưng sau khi quarantine
+> `patches_101` và `patches_105` chỉ còn **1.798 sample hợp lệ**. Áp dụng cùng tỷ lệ
+> 75/15/10 và largest-remainder cho 1.798 sample sẽ cho kết quả **1348/270/180**
+> (train/validation/test), không phải 1350/270/180.
 
 Nếu một nhóm ảnh trùng nội dung quá lớn khiến không thể đạt chính xác tỷ lệ này, pipeline ưu
 tiên giữ toàn nhóm trong cùng một split để chống data leakage và ghi sai lệch thực tế

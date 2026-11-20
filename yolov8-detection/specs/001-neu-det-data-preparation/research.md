@@ -150,7 +150,9 @@ Mọi điểm chưa rõ trong Technical Context đã được giải quyết dư
   - Pool chia gồm các `MatchedSample` đã ghép đúng trong từng subset nguồn; mỗi sample là đơn
     vị nguyên tử (ảnh + XML đi cùng nhau). Chia lại 75/15/10 không phải ghép xuyên subset.
   - Tỷ lệ mặc định **75/15/10** cho train/validation/test; seed mặc định **42**; cả hai ghi vào
-    manifest. Với 1.800 ảnh, mục tiêu là **1350/270/180** ảnh.
+    manifest. Với **1.800 sample hợp lệ**, mục tiêu largest-remainder là **1350/270/180** ảnh.
+    Trên bộ NEU-DET thực tế, sau khi quarantine `patches_101` và `patches_105` còn 1.798 sample
+    hợp lệ nên kết quả là **1348/270/180**.
   - Mỗi sample được biểu diễn bằng `present_classes`: tập hợp tất cả class ID xuất hiện trong
     ảnh (không phải chỉ lớp đầu tiên).
   - Kích thước từng split được chốt bằng largest-remainder trên tổng số sample hợp lệ, tie-break

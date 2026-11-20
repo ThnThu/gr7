@@ -33,6 +33,8 @@
 
 - Validation passed on first iteration.
 - Assumption on dataset size (1.800 ảnh, 6 lớp) and split ratio (75/15/10, seed 42) reflects the
-  final team decision; target counts are 1350/270/180. The ratio and seed are configurable and
-  must be recorded at run time.
+  final team decision; target counts for exactly 1.800 eligible samples are 1350/270/180. For the
+  real NEU-DET dataset, 1.798 samples remain eligible after quarantining `patches_101` and
+  `patches_105`, so largest-remainder 75/15/10 yields 1348/270/180. The ratio and seed are
+  configurable and must be recorded at run time.
 - No blocking issues. Spec is ready for `/speckit.clarify` (optional) or `/speckit.plan`.

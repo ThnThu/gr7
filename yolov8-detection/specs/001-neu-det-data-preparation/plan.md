@@ -159,8 +159,10 @@ Các quy tắc sau là bất biến của pipeline và phải được kiểm th
 - **Pool chia**: Gồm các `MatchedSample` đã ghép đúng trong từng subset nguồn. Khi chia lại
   75/15/10, mỗi sample được xem là đơn vị nguyên tử (ảnh + XML đi cùng nhau); đây không phải
   ghép ảnh–XML xuyên subset.
-- **Tỷ lệ mặc định**: 75% train / 15% validation / 10% test. Với 1.800 ảnh, mục tiêu là
-  1350 / 270 / 180 ảnh. Tỷ lệ có thể truyền qua CLI nhưng phải dương, tổng bằng 1.0 và được ghi
+- **Tỷ lệ mặc định**: 75% train / 15% validation / 10% test. Với **1.800 sample hợp lệ**, mục tiêu
+  largest-remainder là **1350 / 270 / 180** ảnh. Trên bộ NEU-DET thực tế, sau khi quarantine
+  `patches_101` và `patches_105` còn **1.798 sample hợp lệ**, kết quả largest-remainder 75/15/10
+  là **1348 / 270 / 180**. Tỷ lệ có thể truyền qua CLI nhưng phải dương, tổng bằng 1.0 và được ghi
   lại trong manifest. Giá trị dùng để báo cáo là giá trị thực tế sau khi chia.
 - **Đơn vị phân tầng**: Mỗi ảnh được biểu diễn bằng `present_classes` — tập **tất cả** class ID
   xuất hiện trong ảnh, không phải chỉ lớp của đối tượng đầu tiên. Ảnh nhiều đối tượng thuộc
@@ -303,7 +305,7 @@ Tất cả test dùng fixture VOC tổng hợp trong `tmp_path`, không phụ th
 | T-05 | Một ảnh có nhiều object thuộc nhiều lớp | Nhãn có đủ số dòng; `present_classes` chứa tất cả lớp; `image_counts_by_class` đếm ảnh một lần, `object_counts_by_class` đếm đủ object |
 | T-06 | Hai ảnh cùng nội dung ở hai subset nguồn, nhãn nhất quán | Cùng một `DuplicateGroup`; cả hai vào **cùng** một split; không có SHA-256 xuất hiện ở hai split |
 | T-07 | Hai ảnh cùng nội dung nhưng nhãn xung đột | `duplicate_content` mức error; gate fail hoặc quarantine toàn nhóm |
-| T-08 | Chạy split với 75/15/10 và seed cố định hai lần trên dataset không có nhóm trùng chặn tỷ lệ | Danh sách sample từng split giống hệt; tổng đúng; với 1.800 ảnh đạt 1350/270/180 |
+| T-08 | Chạy split với 75/15/10 và seed cố định hai lần trên dataset không có nhóm trùng chặn tỷ lệ | Danh sách sample từng split giống hệt; tổng đúng; với 1.800 sample hợp lệ đạt 1350/270/180 (NEU-DET thực tế: 1.798 sample sau quarantine `patches_101`/`patches_105` → 1348/270/180) |
 | T-09 | Kiểm tra giao các split | Giao theo `sample_id`, `output_image`, `sha256` đều rỗng |
 | T-10 | Chạy CLI với source/output ngoài `data/raw` | Thành công; manifest ghi đúng đường dẫn tuyệt đối/relative đã dùng |
 | T-11 | Hash toàn bộ cây nguồn trước và sau khi chạy | Hash giống hệt; không có tệp mới/đổi tên/xóa trong nguồn |
@@ -352,8 +354,10 @@ Tất cả test dùng fixture VOC tổng hợp trong `tmp_path`, không phụ th
 
 Cập nhật 2026-11-14 đã đồng bộ toàn bộ tài liệu Feature 001 theo quyết định kỹ thuật cuối cùng:
 tỷ lệ split mặc định là **75/15/10** (train/validation/test), seed mặc định là **42**, với
-1.800 ảnh mục tiêu tương ứng **1350/270/180**. Cách phân tầng là multi-label theo tất cả lớp
-xuất hiện trong từng ảnh; ảnh trùng nội dung được gom nhóm nguyên tử và không tách giữa các
+**1.800 sample hợp lệ** mục tiêu largest-remainder tương ứng **1350/270/180**. Trên bộ NEU-DET
+thực tế, sau khi quarantine `patches_101` và `patches_105` còn **1.798 sample hợp lệ** nên kết
+quả largest-remainder 75/15/10 là **1348/270/180**. Cách phân tầng là multi-label theo tất cả
+lớp xuất hiện trong từng ảnh; ảnh trùng nội dung được gom nhóm nguyên tử và không tách giữa các
 split. `spec.md`, `checklists/requirements.md`, `plan.md`, `research.md`, `data-model.md`,
 `quickstart.md` và các contract trong `contracts/` đã được rà soát và thống nhất theo cùng một
 cấu hình split, không còn tài liệu nào ghi tỷ lệ cũ.

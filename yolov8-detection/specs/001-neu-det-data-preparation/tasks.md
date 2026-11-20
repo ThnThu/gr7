@@ -137,10 +137,10 @@ trước, xác nhận test fail, rồi mới implement.
 
 **Purpose**: Xác nhận quickstart, hiệu năng, bất biến nguồn và tính nhất quán tài liệu.
 
-- [ ] T033 [P] Validate every command and expected output in `specs/001-neu-det-data-preparation/quickstart.md` against a synthetic dataset in `tmp_path`; fix only the documentation if a command, exit code or expected count is wrong
-- [ ] T034 [P] Run a performance smoke test using `tests/conftest.py` helpers to generate a 1.800-image synthetic tree (small 64×64 JPEGs), invoke `detection prepare` from `src/detection/cli.py`, and confirm the full pipeline finishes under 10 minutes with copy-only image handling and no pixel transformations
-- [ ] T035 Run `pytest -q` across `tests/unit/` and `tests/integration/`; confirm all required groups are covered, no test uses the real NEU-DET dataset or network, and source fingerprints are unchanged in every integration run
-- [ ] T036 [P] Audit documentation consistency across `specs/001-neu-det-data-preparation/spec.md`, `plan.md`, `research.md`, `data-model.md`, `quickstart.md`, `contracts/`, and this `tasks.md`: confirm 75/15/10, seed 42, `1350/270/180`, fixed class mapping, duplicate atomicity and `split_distribution_deviation` are stated identically; do not change Feature 002
+- [x] T033 [P] Validate every command and expected output in `specs/001-neu-det-data-preparation/quickstart.md` against a synthetic dataset in `tmp_path`; fix only the documentation if a command, exit code or expected count is wrong
+- [x] T034 [P] Run a performance smoke test using `tests/conftest.py` helpers to generate a 1.800-image synthetic tree (small 64×64 images), invoke `detection prepare` from `src/detection/cli.py`, and confirm the full pipeline finishes under 10 minutes with copy-only image handling and no pixel transformations
+- [x] T035 Run `pytest -q` across `tests/unit/` and `tests/integration/`; confirm all required groups are covered, no test uses the real NEU-DET dataset or network, and source fingerprints are unchanged in every integration run
+- [x] T036 [P] Audit documentation consistency across `specs/001-neu-det-data-preparation/spec.md`, `plan.md`, `research.md`, `data-model.md`, `quickstart.md`, `contracts/`, `checklists/requirements.md`, and this `tasks.md`: confirm 75/15/10, seed 42, fixed class mapping 0–5, duplicate-group atomicity, and `split_distribution_deviation` are consistent; state `1350/270/180` as the largest-remainder target for exactly 1.800 eligible samples and note that real NEU-DET has 1.798 eligible samples after quarantining `patches_101`/`patches_105` so the result is `1348/270/180`; do not change Feature 002
 
 ---
 

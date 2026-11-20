@@ -353,8 +353,9 @@ Ví dụ `duplicate_content` (một record cho mỗi member; nhãn xung đột):
 
 ### 4.2 Ví dụ
 
-Ví dụ dưới đây dùng cấu hình mặc định **75/15/10** với seed **42** cho 1.800 ảnh, tương ứng
-**1350/270/180** ảnh.
+Ví dụ dưới đây dùng cấu hình mặc định **75/15/10** với seed **42** cho **1.800 sample hợp lệ**,
+tương ứng **1350/270/180** ảnh. (Tham chiếu NEU-DET thực tế: sau khi quarantine `patches_101` và
+`patches_105` còn 1.798 sample hợp lệ, nên largest-remainder 75/15/10 cho **1348/270/180**.)
 
 ```json
 {

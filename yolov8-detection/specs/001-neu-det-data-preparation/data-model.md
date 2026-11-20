@@ -463,10 +463,12 @@ Các bất biến phải được kiểm tra trong code và trong test:
 | INV-14 | Mỗi sample paired lỗi trong chế độ quarantine có đúng một bản copy ảnh và một bản copy XML dưới `rejected/`, giữ nguyên đường dẫn tương đối; không có nhãn YOLO trong `rejected/` |
 | INV-15 | Mỗi ảnh nguồn được đếm đúng một lần trong accounting, không trùng giữa `written`, `quarantined`, `unwritten`, `unpaired` |
 
-Với 1.800 ảnh, mục tiêu largest-remainder là **1350 train / 270 validation / 180 test**. Nếu
-nhóm ảnh trùng nguyên tử khiến không thể đạt chính xác các mục tiêu này, ưu tiên giữ toàn nhóm
-trong một split để chống data leakage, ghi `split_distribution_deviation` và ghi tỷ lệ thực tế
-vào manifest.
+Với **1.800 sample hợp lệ**, mục tiêu largest-remainder 75/15/10 là **1350 train / 270 validation /
+180 test**. Trên bộ NEU-DET thực tế, sau khi quarantine `patches_101` và `patches_105` còn
+**1.798 sample hợp lệ**, nên cùng công thức largest-remainder cho kết quả **1348/270/180**. Nếu
+nhóm ảnh trùng nguyên tử hoặc pool eligible khác khiến không thể đạt chính xác mục tiêu, ưu tiên
+giữ toàn nhóm trong một split để chống data leakage, ghi `split_distribution_deviation` và ghi
+tỷ lệ thực tế vào manifest.
 
 ## 9. Quy ước đếm
 

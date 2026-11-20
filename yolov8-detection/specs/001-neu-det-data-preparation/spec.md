@@ -215,9 +215,11 @@ trong từng split giống nhau 100%; kiểm tra không có ảnh nào xuất hi
 - Bộ NEU-DET gốc gồm 1.800 ảnh, 6 lớp lỗi (mỗi lớp khoảng 300 ảnh), annotation dạng Pascal VOC
   XML và ảnh JPEG; dữ liệu nguồn ở trạng thái chỉ đọc.
 - Tỷ lệ split mặc định là 75% train / 15% validation / 10% test, chia phân tầng theo **tập tất cả
-  các lớp xuất hiện trong từng ảnh** (multi-label); seed mặc định là 42. Với 1.800 ảnh, mục tiêu
-  tương ứng là 1350 / 270 / 180 ảnh. Tỷ lệ và seed có thể cấu hình nhưng giá trị dùng để
-  báo cáo phải được ghi lại.
+  các lớp xuất hiện trong từng ảnh** (multi-label); seed mặc định là 42. Với **1.800 sample hợp
+  lệ**, mục tiêu largest-remainder tương ứng là **1350 / 270 / 180** ảnh. Trên bộ NEU-DET thực tế,
+  sau khi quarantine `patches_101` và `patches_105` còn **1.798 sample hợp lệ**, nên kết quả
+  largest-remainder 75/15/10 là **1348 / 270 / 180**. Tỷ lệ và seed có thể cấu hình nhưng giá trị
+  dùng để báo cáo phải được ghi lại.
 - Nhóm dùng chung một quy ước tên lớp và thứ tự lớp; thay đổi quy ước này là thay đổi phạm vi
   và phải được phê duyệt.
 - Mỗi ảnh có thể chứa một hoặc nhiều đối tượng lỗi; ảnh không có đối tượng vẫn được giữ và
